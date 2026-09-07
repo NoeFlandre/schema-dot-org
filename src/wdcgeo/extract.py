@@ -247,12 +247,12 @@ def deduplicate(records: Iterable[GeoText]) -> Iterator[GeoText]:
     only the places of the current host bounds what has to be remembered; a host
     that comes back later starts over.
     """
-    host: str | None = None
+    previous: GeoText | None = None
     places: set[tuple[float, float, str | None]] = set()
     for record in records:
-        if record.host != host:
-            host = record.host
+        if previous is not None and record.host != previous.host:
             places = set()
+        previous = record
         place = (record.latitude, record.longitude, record.name)
         if place not in places:
             places.add(place)

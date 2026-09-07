@@ -152,3 +152,17 @@ def test_assemble_needs_no_parts_at_all(tmp_path):
     out = tmp_path / "dataset"
     assert assemble([], [], out) == {"parts": 0, "records": 0, "shards": [], "card": "README.md"}
     assert json.loads((out / "profile.json").read_text(encoding="utf-8")) == {}
+
+
+def test_writes_into_a_directory_that_already_holds_a_dataset(tmp_path):
+    write_dataset([BASE], tmp_path, SOURCES)
+    manifest = write_dataset([BASE, replace(BASE, name="Two")], tmp_path, SOURCES)
+    assert manifest["records"] == 2
+    assert len(read_shard(tmp_path, "part-00000.jsonl.gz")) == 2
+
+
+def test_assembles_into_a_directory_that_already_holds_a_dataset(tmp_path):
+    part = part_directory(tmp_path, "part_0", [BASE], {"records": 1})
+    out = tmp_path / "dataset"
+    assemble([part], SOURCES, out)
+    assert assemble([part], SOURCES, out)["records"] == 1

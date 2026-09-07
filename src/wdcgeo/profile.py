@@ -186,14 +186,18 @@ def _merge_pair(into: dict[str, Any], report: Mapping[str, Any]) -> dict[str, An
     return into
 
 
-def _ranked(section: dict[str, Any], name: str = "") -> dict[str, Any]:
-    if name not in STRUCTURAL_SECTIONS and all(isinstance(v, int) for v in section.values()):
-        ordered = sorted(section.items(), key=lambda item: (-item[1], item[0]))
-        return dict(ordered[:TOP_N])
+def _ranked(report: dict[str, Any]) -> dict[str, Any]:
     return {
-        key: _ranked(value, key) if isinstance(value, dict) else value
-        for key, value in section.items()
+        key: _rank(value, key) if isinstance(value, dict) else value
+        for key, value in report.items()
     }
+
+
+def _rank(section: dict[str, Any], name: str) -> dict[str, Any]:
+    if name in STRUCTURAL_SECTIONS or not all(isinstance(v, int) for v in section.values()):
+        return _ranked(section)
+    ordered = sorted(section.items(), key=lambda item: (-item[1], item[0]))
+    return dict(ordered[:TOP_N])
 
 
 def merge(reports: Iterable[Mapping[str, Any]]) -> dict[str, Any]:

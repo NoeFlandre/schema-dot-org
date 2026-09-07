@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wdcgeo import ENCODING, write_text
 from wdcgeo.corpus import part_url
-from wdcgeo.dataset import assemble, write_dataset
+from wdcgeo.dataset import assemble, read_json, to_json, write_dataset
 from wdcgeo.extract import deduplicate
 from wdcgeo.pipeline import Pipeline
 from wdcgeo.profile import Accumulator, merge
@@ -53,7 +54,9 @@ def _parser() -> argparse.ArgumentParser:
     assemble_command = commands.add_parser(
         "assemble", help=ASSEMBLE_HELP, description=ASSEMBLE_HELP
     )
-    assemble_command.add_argument("--from", dest="parts", type=Path, required=True, help=FROM_HELP)
+    assemble_command.add_argument(
+        "--from", dest="parts", type=Path, required=True, metavar="DIR", help=FROM_HELP
+    )
     assemble_command.add_argument(
         "--part", type=int, action="append", required=True, metavar="N", help=PART_HELP
     )
@@ -64,15 +67,17 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _report(report: dict[str, Any], out: Path | None) -> None:
-    text = json.dumps(report, indent=2, ensure_ascii=False)
+    text = to_json(report)
     if out is None:
         print(text)
         return
-    out.write_text(text + "\n", encoding="utf-8")
+    write_text(out, text + "\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line, returning the process exit code."""
+    # sys.stdout is a TextIOWrapper at runtime; typeshed types it as plain TextIO.
+    sys.stdout.reconfigure(encoding=ENCODING)  # ty: ignore[unresolved-attribute] # pragma: no mutate
     parser = _parser()
     arguments = parser.parse_args(argv)
     if arguments.command == "assemble":
@@ -81,7 +86,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _report(assemble(directories, sources, arguments.out), None)
         return 0
     if arguments.command == "merge":
-        reports = [json.loads(Path(name).read_text(encoding="utf-8")) for name in arguments.reports]
+        reports = [read_json(Path(name)) for name in arguments.reports]
         _report(merge(reports), arguments.out)
         return 0
     locations = [*arguments.sources, *(part_url(part) for part in arguments.part or ())]

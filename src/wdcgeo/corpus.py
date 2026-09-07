@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING
 from urllib.request import urlopen
 
+from wdcgeo import ENCODING
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -31,6 +33,7 @@ PART_COUNT = 237
 """How many parts that subset is split into."""
 
 _URL_SCHEMES = ("http://", "https://")
+_DECODE_ERRORS = "replace"
 
 
 def part_url(index: int, base_url: str = DEFAULT_BASE_URL) -> str:
@@ -52,4 +55,9 @@ def stream_lines(location: str) -> Iterator[str]:
     """Yield the lines of a part, from a URL or a path, gzipped or plain."""
     with _opened(location) as raw:
         stream = gzip.GzipFile(fileobj=raw) if location.endswith(".gz") else raw
-        yield from TextIOWrapper(stream, encoding="utf-8", errors="replace")
+        # pragma: encoding mutants are unobservable in-process; the property is
+        # tested from a subprocess under an ASCII locale instead.
+        wrapper = TextIOWrapper(
+            stream, encoding=ENCODING, errors=_DECODE_ERRORS
+        )  # pragma: no mutate
+        yield from wrapper

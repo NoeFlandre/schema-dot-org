@@ -16,6 +16,7 @@ from pathlib import Path
 from shutil import copyfile
 from typing import TYPE_CHECKING, Any
 
+from wdcgeo import ENCODING, read_text, write_text
 from wdcgeo.profile import merge
 
 if TYPE_CHECKING:
@@ -27,6 +28,9 @@ SHARD_SIZE = 250_000
 """Records per shard: small enough to stream, few enough to list."""
 
 CARD_NAME = "README.md"
+PROFILE_NAME = "profile.json"
+
+_SHARD_MODE = "wt"
 
 _SIZE_BANDS = (
     (1_000, "n<1K"),
@@ -39,6 +43,15 @@ _SIZE_BANDS = (
 _LARGEST_BAND = "100M<n<1B"
 
 
+def to_json(value: object) -> str:
+    """Render ``value`` as indented JSON, leaving text outside ASCII as it is."""
+    return json.dumps(value, indent=2, ensure_ascii=False)  # pragma: no mutate
+
+
+def _json_line(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False)  # pragma: no mutate
+
+
 def size_category(count: int) -> str:
     """Return the Hugging Face size band ``count`` records fall in."""
     for limit, label in _SIZE_BANDS:
@@ -49,13 +62,13 @@ def size_category(count: int) -> str:
 
 def write_card(directory: Path, records: int, sources: Sequence[str]) -> None:
     """Write the dataset card for ``records`` records read from ``sources``."""
-    template = Path(__file__).with_name("card.md").read_text(encoding="utf-8")
+    template = read_text(Path(__file__).with_name("card.md"))
     card = template.format(
         records=f"{records:,}",
         size_category=size_category(records),
         sources="\n".join(f"- `{source}`" for source in sources),
     )
-    (directory / CARD_NAME).write_text(card, encoding="utf-8")
+    write_text(directory / CARD_NAME, card)
 
 
 def _chunked(records: Iterator[GeoText], size: int) -> Iterator[Iterator[GeoText]]:
@@ -78,9 +91,9 @@ def write_dataset(
     written = 0
     for chunk in _chunked(iter(records), shard_size):
         name = f"part-{len(shards):05d}.jsonl.gz"
-        with gzip.open(data / name, "wt", encoding="utf-8") as handle:
+        with gzip.open(data / name, _SHARD_MODE, encoding=ENCODING) as handle:  # pragma: no mutate
             for record in chunk:
-                handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
+                handle.write(_json_line(asdict(record)) + "\n")
                 written += 1
         shards.append(name)
     write_card(directory, written, sources)
@@ -104,14 +117,13 @@ def assemble(parts: Sequence[Path], sources: Sequence[str], directory: Path) -> 
         for shard in sorted((part / "data").glob("*.jsonl.gz")):
             shards.append(f"part-{len(shards):05d}.jsonl.gz")
             copyfile(shard, data / shards[-1])
-        reports.append(_read_json(part / "profile.json"))
-        records += _read_json(part / "manifest.json")["records"]
-    (directory / "profile.json").write_text(
-        json.dumps(merge(reports), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+        reports.append(read_json(part / "profile.json"))
+        records += read_json(part / "manifest.json")["records"]
+    write_text(directory / PROFILE_NAME, to_json(merge(reports)) + "\n")
     write_card(directory, records, sources)
     return {"parts": len(parts), "records": records, "shards": shards, "card": CARD_NAME}
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def read_json(path: Path) -> dict[str, Any]:
+    """Read a JSON object from a UTF-8 file."""
+    return json.loads(read_text(path))

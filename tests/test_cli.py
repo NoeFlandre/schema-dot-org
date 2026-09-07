@@ -1,8 +1,13 @@
 import gzip
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
+import wdcgeo
 from wdcgeo import cli
 from wdcgeo.corpus import part_url
 
@@ -84,23 +89,6 @@ def test_refuses_incomplete_invocations(argv):
     assert raised.value.code == 2
 
 
-def test_help_documents_every_option(capsys):
-    printed = ""
-    for argv in (
-        ["--help"],
-        ["profile", "--help"],
-        ["export", "--help"],
-        ["merge", "--help"],
-        ["assemble", "--help"],
-    ):
-        with pytest.raises(SystemExit):
-            cli.main(argv)
-        printed += capsys.readouterr().out
-    assert HELP_TEXTS
-    for text in HELP_TEXTS:
-        assert text in printed
-
-
 def test_merge_folds_profiles_of_separate_parts(tmp_path, capsys):
     paths = []
     for index, name in enumerate(["Cafe Zero", "Cafe Un"]):
@@ -169,3 +157,173 @@ def test_assemble_builds_one_dataset_from_the_parts_of_a_run(tmp_path, capsys):
     card = (dataset / "README.md").read_text(encoding="utf-8")
     assert f"- `{part_url(0)}`" in card
     assert f"- `{part_url(7)}`" in card
+
+
+def test_part_numbers_are_read_as_numbers_not_as_text(tmp_path, capsys):
+    out = tmp_path / "d"
+    assert cli.main(["export", "--part", "007", "--max-lines", "0", "--out", str(out)]) == 0
+    capsys.readouterr()
+    assert f"- `{part_url(7)}`" in (out / "README.md").read_text(encoding="utf-8")
+
+
+def test_assemble_reads_part_numbers_as_numbers(tmp_path, capsys):
+    parts = tmp_path / "parts"
+    assert cli.main(["export", source(tmp_path, "a.gz"), "--out", str(parts / "part_7")]) == 0
+    capsys.readouterr()
+    argv = ["assemble", "--from", str(parts), "--part", "007", "--out", str(tmp_path / "d")]
+    assert cli.main(argv) == 0
+    assert json.loads(capsys.readouterr().out)["records"] == 1
+
+
+def test_json_output_is_indented_for_a_human_to_read(tmp_path, capsys):
+    assert cli.main(["export", source(tmp_path, "a.gz"), "--out", str(tmp_path / "d")]) == 0
+    assert capsys.readouterr().out == (
+        "{\n"
+        '  "records": 1,\n'
+        '  "shards": [\n'
+        '    "part-00000.jsonl.gz"\n'
+        "  ],\n"
+        '  "card": "README.md"\n'
+        "}\n"
+    )
+
+
+def test_output_leaves_text_outside_ascii_as_it_is(tmp_path, capsys):
+    page = "http://café.example.com/p/1"
+    assert cli.main(["profile", source(tmp_path, "a.gz", page=page)]) == 0
+    assert "café.example.com" in capsys.readouterr().out
+
+
+def test_error_says_what_is_missing(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["profile"])
+    assert "give at least one SOURCE or --part" in capsys.readouterr().err
+
+
+# Golden help text: argparse metavars, program name and layout are part of the
+# published interface, and nothing else pins them down.
+HELP = {
+    "wdcgeo": """\
+usage: wdcgeo [-h] {profile,export,merge,assemble} ...
+
+Mine geolocated text from Web Data Commons.
+
+positional arguments:
+  {profile,export,merge,assemble}
+    profile             Report what a corpus holds, as JSON.
+    export              Write the records as a dataset, with a profile.
+    merge               Fold profiles of separate parts into one.
+    assemble            Gather the parts of a run into one dataset.
+
+options:
+  -h, --help            show this help message and exit
+""",
+    "profile": """\
+usage: wdcgeo profile [-h] [--part N] [--max-lines N] [--out PATH]
+                      [SOURCE ...]
+
+Report what a corpus holds, as JSON.
+
+positional arguments:
+  SOURCE         a part file, as a path or a URL
+
+options:
+  -h, --help     show this help message and exit
+  --part N       a part number of the published subset
+  --max-lines N  stop after this many lines
+  --out PATH     write the profile here instead of stdout
+""",
+    "export": """\
+usage: wdcgeo export [-h] [--part N] [--max-lines N] --out DIR [SOURCE ...]
+
+Write the records as a dataset, with a profile.
+
+positional arguments:
+  SOURCE         a part file, as a path or a URL
+
+options:
+  -h, --help     show this help message and exit
+  --part N       a part number of the published subset
+  --max-lines N  stop after this many lines
+  --out DIR      directory to write the dataset into
+""",
+    "merge": """\
+usage: wdcgeo merge [-h] [--out PATH] REPORT [REPORT ...]
+
+Fold profiles of separate parts into one.
+
+positional arguments:
+  REPORT      a profile written by the profile command
+
+options:
+  -h, --help  show this help message and exit
+  --out PATH  write the profile here instead of stdout
+""",
+    "assemble": """\
+usage: wdcgeo assemble [-h] --from DIR --part N --out DIR
+
+Gather the parts of a run into one dataset.
+
+options:
+  -h, --help  show this help message and exit
+  --from DIR  directory holding the part_N directories
+  --part N    a part number of the published subset
+  --out DIR   directory to write the dataset into
+""",
+}
+
+
+@pytest.mark.parametrize("command", list(HELP))
+def test_help_is_exactly_as_published(command, capsys, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "80")
+    argv = ["--help"] if command == "wdcgeo" else [command, "--help"]
+    with pytest.raises(SystemExit) as raised:
+        cli.main(argv)
+    assert raised.value.code == 0
+    assert capsys.readouterr().out == HELP[command]
+
+
+def test_every_help_string_reaches_the_help_output():
+    printed = "".join(HELP.values())
+    assert HELP_TEXTS
+    for text in HELP_TEXTS:
+        assert text in printed
+
+
+def test_reads_and_writes_utf8_whatever_the_locale(tmp_path):
+    """A run under an ASCII locale must still read and write UTF-8.
+
+    Every encoding in this package is passed explicitly for this reason. Left
+    to the locale, the same run raises `UnicodeDecodeError` on the corpus or
+    writes mojibake into the dataset, and nothing in a UTF-8 development
+    environment would ever say so.
+    """
+    name = "Café Zéro"
+    argv = ["export", source(tmp_path, "a.gz", name=name), "--out", str(tmp_path / "d")]
+    package_root = Path(wdcgeo.__file__).parent.parent
+    # The parent environment carries through so that the subprocess runs the
+    # same code as this process, mutation harness included; only the locale and
+    # the import path are forced.
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(package_root),
+        "LC_ALL": "C",
+        "PYTHONCOERCECLOCALE": "0",
+        "PYTHONUTF8": "0",
+    }
+    program = "import sys; from wdcgeo.cli import main; sys.exit(main())"
+
+    finished = subprocess.run(
+        [sys.executable, "-c", program, *argv], capture_output=True, env=environment, check=False
+    )
+
+    assert finished.returncode == 0, finished.stderr.decode("utf-8", "replace")
+    assert json.loads(finished.stdout.decode("utf-8"))["records"] == 1
+    with gzip.open(tmp_path / "d" / "data" / "part-00000.jsonl.gz", "rt", encoding="utf-8") as h:
+        assert json.loads(h.read())["name"] == name
+
+
+def test_reads_nothing_at_all_when_the_cap_is_zero(tmp_path, capsys):
+    absent = str(tmp_path / "absent.gz")
+    assert cli.main(["profile", absent, "--max-lines", "0"]) == 0
+    assert json.loads(capsys.readouterr().out)["input"]["lines"] == 0
