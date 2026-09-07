@@ -88,10 +88,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding=ENCODING)  # ty: ignore[unresolved-attribute] # pragma: no mutate
     parser = _parser()
     arguments = parser.parse_args(argv)
-    if arguments.command == "assemble":
-        return _assemble(arguments)
-    if arguments.command == "merge":
-        return _merge(arguments)
+    command = _WITHOUT_A_CORPUS.get(arguments.command)
+    if command is not None:
+        return command(arguments)
+    return _over_a_corpus(arguments, parser)
+
+
+def _over_a_corpus(arguments: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     locations = [*arguments.sources, *(part_url(part) for part in arguments.part or ())]
     if not locations:
         parser.error(f"give at least one SOURCE or --part: {SOURCE_HELP}")
@@ -133,3 +136,7 @@ def _export(pipeline: Pipeline, locations: Sequence[str], out: Path) -> int:
 
 def _with_input(report: dict[str, Any], pipeline: Pipeline) -> dict[str, Any]:
     return {**report, "input": pipeline.counts()}
+
+
+_WITHOUT_A_CORPUS = {"assemble": _assemble, "merge": _merge}
+"""The commands that read profiles and datasets rather than the corpus itself."""

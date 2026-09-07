@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 _SIMPLE_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}
 _UNICODE_ESCAPE_WIDTHS = {"u": 4, "U": 8}
 _HEX = 16
+_TERMS_PER_QUAD = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,14 +109,21 @@ class _Scanner:
     def _literal(self) -> Literal | None:
         self._pos += 1
         value = self._read_delimited('"')
-        if value is None:
-            return None
+        return None if value is None else self._tagged(value)
+
+    def _tagged(self, value: str) -> Literal | None:
         if self._peek() == "@":
-            self._pos += 1
-            language = self._read_token()
-            return Literal(value, language=language) if language else None
-        if not self._text.startswith("^^", self._pos):
-            return Literal(value)
+            return self._with_language(value)
+        if self._text.startswith("^^", self._pos):
+            return self._with_datatype(value)
+        return Literal(value)
+
+    def _with_language(self, value: str) -> Literal | None:
+        self._pos += 1
+        language = self._read_token()
+        return Literal(value, language=language) if language else None
+
+    def _with_datatype(self, value: str) -> Literal | None:
         self._pos += 2
         if self._peek() != "<":
             return None
@@ -153,8 +161,9 @@ class _Scanner:
         if simple is not None:
             return simple
         width = _UNICODE_ESCAPE_WIDTHS.get(code)
-        if width is None:
-            return None
+        return None if width is None else self._read_code_point(width)
+
+    def _read_code_point(self, width: int) -> str | None:
         digits = self._text[self._pos : self._pos + width]
         self._pos += width
         if len(digits) != width:
@@ -168,15 +177,18 @@ class _Scanner:
 def parse_line(line: str) -> Quad | None:
     """Parse one line into a :class:`Quad`, or return ``None`` if it is unusable."""
     scanner = _Scanner(line)
-    subject = scanner.term()
-    predicate = scanner.term()
-    obj = scanner.term()
-    graph = scanner.term()
-    if obj is None or not scanner.at_end_of_statement():
+    terms = [scanner.term() for _ in range(_TERMS_PER_QUAD)]
+    if not scanner.at_end_of_statement():
         return None
+    return _quad(terms)
+
+
+def _quad(terms: list[Term | None]) -> Quad | None:
+    """Build a quad from four terms, rejecting any term of the wrong kind."""
+    subject, predicate, obj, graph = terms
     if not isinstance(subject, Iri | BlankNode) or not isinstance(predicate, Iri):
         return None
-    if not isinstance(graph, Iri):
+    if obj is None or not isinstance(graph, Iri):
         return None
     return Quad(subject=subject, predicate=predicate, obj=obj, graph=graph)
 

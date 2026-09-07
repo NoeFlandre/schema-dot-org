@@ -91,14 +91,20 @@ class _Page:
 
     def _add(self, quad: Quad) -> None:
         if quad.predicate.value == _RDF_TYPE:
-            if isinstance(quad.obj, Iri):
-                self._add_type(quad.subject, _schema_name(quad.obj.value))
+            self._add_declared_type(quad)
             return
         parsed = _schema_property(quad.predicate.value)
         if parsed is None:
             return
         name, class_name = parsed
         self._add_type(quad.subject, class_name)
+        self._add_value(quad, name)
+
+    def _add_declared_type(self, quad: Quad) -> None:
+        if isinstance(quad.obj, Iri):
+            self._add_type(quad.subject, _schema_name(quad.obj.value))
+
+    def _add_value(self, quad: Quad, name: str) -> None:
         if isinstance(quad.obj, Literal):
             self.literals.setdefault(quad.subject, {}).setdefault(name, []).append(quad.obj)
             return
@@ -155,20 +161,23 @@ def _clean(text: str) -> str | None:
 
 def _coordinate(text: str, limit: float) -> float | None:
     """Read one coordinate, or return ``None`` if it is not a usable number."""
-    cleaned = text.strip().replace(_MINUS_SIGN, "-").replace(_DEGREE_SIGN, "")
+    cleaned = text.strip().replace(_MINUS_SIGN, "-").replace(_DEGREE_SIGN, "").replace(",", ".")
     hemisphere = _HEMISPHERES.get(cleaned[-1:].upper())
-    if hemisphere is not None:
-        cleaned = cleaned[:-1].strip()
-    cleaned = cleaned.replace(",", ".")
-    try:
-        value = float(cleaned)
-    except ValueError:
+    value = _number(cleaned if hemisphere is None else cleaned[:-1])
+    if value is None:
         return None
     if hemisphere is not None:
         value = hemisphere * abs(value)
-    if not isfinite(value) or abs(value) > limit:
+    return value if abs(value) <= limit else None
+
+
+def _number(text: str) -> float | None:
+    """Read a finite float, or return ``None``: "nan" and "inf" are not values."""
+    try:
+        value = float(text)
+    except ValueError:
         return None
-    return value
+    return value if isfinite(value) else None
 
 
 def _first_coordinate(values: Sequence[Literal], limit: float) -> float | None:
@@ -184,9 +193,11 @@ def _address(page: _Page, entity: Node, text: _Text) -> str | None:
     if literal is not None:
         return literal
     node = page.links.get(entity, {}).get("address")
-    if node is None:
-        return None
-    parts = (text.take(page.values(node, part)) for part in ADDRESS_PARTS)
+    return None if node is None else _postal_address(page, node, text)
+
+
+def _postal_address(page: _Page, node: Node, text: _Text) -> str | None:
+    parts = [text.take(page.values(node, part)) for part in ADDRESS_PARTS]
     return ", ".join(part for part in parts if part is not None) or None
 
 
@@ -202,24 +213,31 @@ def _page_records(quads: list[Quad]) -> Iterator[GeoText]:
         return
     page = _Page(quads)
     for node in page.literals:
-        latitude = _first_coordinate(page.values(node, "latitude"), LATITUDE_LIMIT)
-        longitude = _first_coordinate(page.values(node, "longitude"), LONGITUDE_LIMIT)
-        if latitude is None or longitude is None:
-            continue
-        entity = page.geo_parents.get(node, node)
-        text = _Text()
-        yield GeoText(
-            page_url=page_url,
-            host=host,
-            latitude=latitude,
-            longitude=longitude,
-            types=tuple(sorted(page.types.get(entity, ()))),
-            name=text.take(page.values(entity, "name")),
-            description=text.take(page.values(entity, "description")),
-            address=_address(page, entity, text),
-            text_properties=_text_properties(page, entity),
-            languages=tuple(sorted(text.languages)),
-        )
+        record = _record(page, node, page_url, host)
+        if record is not None:
+            yield record
+
+
+def _record(page: _Page, node: Node, page_url: str, host: str) -> GeoText | None:
+    """Build the record of the entity ``node`` locates, if its coordinates hold up."""
+    latitude = _first_coordinate(page.values(node, "latitude"), LATITUDE_LIMIT)
+    longitude = _first_coordinate(page.values(node, "longitude"), LONGITUDE_LIMIT)
+    if latitude is None or longitude is None:
+        return None
+    entity = page.geo_parents.get(node, node)
+    text = _Text()
+    return GeoText(
+        page_url=page_url,
+        host=host,
+        latitude=latitude,
+        longitude=longitude,
+        types=tuple(sorted(page.types.get(entity, ()))),
+        name=text.take(page.values(entity, "name")),
+        description=text.take(page.values(entity, "description")),
+        address=_address(page, entity, text),
+        text_properties=_text_properties(page, entity),
+        languages=tuple(sorted(text.languages)),
+    )
 
 
 def _pages(quads: Iterable[Quad]) -> Iterator[list[Quad]]:

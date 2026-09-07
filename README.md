@@ -41,15 +41,16 @@ overstate what is there. [Findings](docs/findings.md) has the numbers.
 ## Development
 
 ```bash
-uv run pytest --cov=wdcgeo   # 100% of lines and branches, enforced
-uv run ruff check src tests  # every ruff rule, minus documented exceptions
+uv run pytest --cov=wdcgeo --cov-report=json  # 100% of lines and branches, enforced
+uv run python scripts/crap.py                 # gate: every function below CRAP 6
+uv run ruff check src tests                   # every ruff rule, minus exceptions
 uv run ty check
-uv run mutmut run            # gate: zero surviving mutants
+uv run mutmut run                             # gate: zero surviving mutants
 uv run mkdocs serve
 ```
 
 Written test-first throughout, with mutation testing as the real gate on the
-tests. [Design and quality](docs/design.md) explains the module boundaries and
+tests and CRAP as the gate on how branchy any one function may get. [Design and quality](docs/design.md) explains the module boundaries and
 the three design changes mutation testing forced.
 
 ## Licence

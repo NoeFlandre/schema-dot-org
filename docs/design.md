@@ -27,23 +27,48 @@ fail on the missing import (RED), then the implementation until it passes
 (GREEN). The commit history follows the cycles.
 
 ```bash
-uv run pytest                     # 190 tests
-uv run pytest --cov=wdcgeo        # 100% of lines and branches, enforced
+uv run pytest                                     # 204 tests
+uv run pytest --cov=wdcgeo --cov-report=json      # 100% of lines and branches
+uv run python scripts/crap.py                     # gate: every function below CRAP 6
 uv run ruff format src tests
-uv run ruff check src tests       # every rule ruff has, minus documented exceptions
+uv run ruff check src tests                       # every rule ruff has, minus exceptions
 uv run ty check
-uv run mutmut run && uv run mutmut results
+uv run mutmut run && uv run mutmut results        # gate: zero surviving mutants
 ```
 
 Coverage is gated at 100% of lines *and* branches. It is a floor, not a goal:
 it says every line ran, never that anything was checked.
 
+## CRAP, and why it bites before coverage does
+
+CRAP — Change Risk Anti-Patterns — scores each function on how branchy it is
+against how much of it the tests run:
+
+    CRAP(f) = complexity(f)² × (1 − coverage(f))³ + complexity(f)
+
+A straight-line function is cheap to change however lightly it is tested; a
+branchy one is only safe to change if the tests go through it. The gate here is
+**every function below 6**, checked by `scripts/crap.py` from radon's
+complexity and the statement coverage of each function's own lines. Current
+state: 86 functions, worst score 5.00.
+
+With coverage held at 100% the score collapses to plain complexity, so the gate
+is really a ceiling of five branches per function. Eight functions were over it
+and each split along a seam that was already there: `parse_line` handed term
+validation to `_quad`; the scanner's literal reader split into the language-tag
+and datatype-suffix cases; `_coordinate` handed float parsing to `_number`;
+`_address` handed the linked case to `_postal_address`; the page index split
+into declared types and property values; `_page_records` handed one record to
+`_record`; and `main` dispatches the two commands that read no corpus through a
+table. Nothing was inlined, renamed or hidden to move a number: the split
+functions have names worth reading, which is the point of the ceiling.
+
 ## Mutation testing, and what it changed
 
 `mutmut` rewrites the source one edit at a time and reruns the suite. A mutant
 that survives is a behaviour no test pins down. The gate here is **zero
-survivors** over `src/wdcgeo/`: of 1,126 mutants, 1,122 are killed by a failing
-assertion and 4 by timeout.
+survivors** over `src/wdcgeo/`: of 1,148 mutants, 1,145 are killed by a failing
+assertion and 3 by timeout.
 
 It earned its keep by changing the design, not just by adding tests:
 
@@ -62,7 +87,7 @@ It earned its keep by changing the design, not just by adding tests:
   had a default that only the top-level call used, and any other string behaved
   identically. Splitting the function in two removed the argument.
 
-Four mutants are killed by timeout rather than by an assertion: each moves the
+Three mutants are killed by timeout rather than by an assertion: each moves the
 scanner's cursor backwards or resets it, so the scanner loops forever. A mutant
 that hangs the suite is detected, which is what being killed means here. Two
 others used to "die" the same way for a bad reason — they ignored
