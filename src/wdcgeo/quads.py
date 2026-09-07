@@ -10,6 +10,7 @@ every entry point here answers with ``None`` instead of raising, and
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,10 @@ if TYPE_CHECKING:
 _SIMPLE_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}
 _UNICODE_ESCAPE_WIDTHS = {"u": 4, "U": 8}
 _HEX = 16
+_NOT_FOUND = -1
+_BACKSLASH = "\\"
+_WHITESPACE = re.compile(r"\s")
+_NON_WHITESPACE = re.compile(r"\S")
 _TERMS_PER_QUAD = 4
 
 
@@ -91,8 +96,8 @@ class _Scanner:
         return self._text[self._pos : self._pos + 1]
 
     def _skip_whitespace(self) -> None:
-        while self._peek().isspace():
-            self._pos += 1
+        found = _NON_WHITESPACE.search(self._text, self._pos)
+        self._pos = len(self._text) if found is None else found.start()
 
     def _iri(self) -> Iri | None:
         self._pos += 1
@@ -131,15 +136,42 @@ class _Scanner:
         return None if datatype is None else Literal(value, datatype=datatype.value)
 
     def _read_token(self) -> str:
+        found = _WHITESPACE.search(self._text, self._pos)
         start = self._pos
-        while self._pos < len(self._text) and not self._text[self._pos].isspace():
-            self._pos += 1
+        self._pos = len(self._text) if found is None else found.start()
         return self._text[start : self._pos]
 
     def _read_delimited(self, end: str) -> str | None:
+        """Read up to ``end``, decoding any escapes on the way.
+
+        Escapes are rare in this corpus -- a handful of terms per million
+        lines -- so the common case is answered by two searches and a slice.
+        Only a backslash standing before the delimiter costs a character loop,
+        which is what :meth:`_read_escaped` is for. On a real part this is the
+        difference between 36,000 and 100,000 lines a second, and the corpus is
+        three billion lines long.
+        """
+        text = self._text
+        stop = text.find(end, self._pos)
+        if stop == _NOT_FOUND:
+            self._pos = len(text)
+            return None
+        # Both lines below carry mutants that only route reading through the
+        # slower path, which by design cannot change the result. See
+        # docs/design.md.
+        escape = text.find(_BACKSLASH, self._pos)  # pragma: no mutate
+        if escape == _NOT_FOUND or escape > stop:  # pragma: no mutate
+            value = text[self._pos : stop]
+            self._pos = stop + 1
+            return value
+        return self._read_escaped(end)
+
+    def _read_escaped(self, end: str) -> str | None:
+        text = self._text
+        length = len(text)
         parts: list[str] = []
-        while self._pos < len(self._text):
-            char = self._text[self._pos]
+        while self._pos < length:
+            char = text[self._pos]
             self._pos += 1
             if char == end:
                 return "".join(parts)

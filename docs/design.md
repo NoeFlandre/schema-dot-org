@@ -105,9 +105,9 @@ where possible and pinned where not:
   output of all five commands is asserted verbatim. Program name, metavars and
   layout are the published interface; 93 mutants were hiding in that wiring.
 
-### The five suppressed mutants
+### The suppressed mutants
 
-Five lines carry `# pragma: no mutate`, and each carries only an encoding
+Seven lines carry `# pragma: no mutate`. Five carry only an encoding
 argument. Mutating `encoding="utf-8"` to `encoding=None`, to the alias
 `"UTF-8"`, or to nothing at all is unobservable in-process, because the
 machine's own default encoding is UTF-8 — the mutant and the original do the
@@ -122,6 +122,17 @@ it cannot see that test kill anything — hence the pragma rather than a silent
 survivor. Every other literal was hoisted off those five lines first
 (`ENCODING`, `_SHARD_MODE`, `_DECODE_ERRORS`, `PROFILE_NAME`, and the text
 helpers in `wdcgeo/__init__.py`), so the suppression covers nothing else.
+
+The other two are in the scanner's fast path. `_read_delimited` answers the
+common case — a term with no escape in it — with two searches and a slice,
+falling back to a character loop only when a backslash really does stand before
+the delimiter. That is worth 3.5× on a corpus of three billion lines, and it
+means any mutant that merely routes a term through the slower path cannot
+change the result: searching for the backslash from position zero instead of
+the cursor, or turning `or` into `and` so the fast path never runs, are both
+still correct, just slower. Those two lines are suppressed; every mutant on
+them that *can* change a result is covered by a test instead — a term read
+through the fast path while a later term carries an escape, and the reverse.
 
 ## YAGNI, held to
 

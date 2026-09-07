@@ -73,6 +73,21 @@ def test_decodes_escapes_in_iri():
     assert quad.subject == Iri("http://example.com/a b")
 
 
+def test_decodes_an_escape_when_a_later_term_also_carries_one():
+    line = r'_:n <http://schema.org/name> "a\nb" <http://example.com/a\u0062> .'
+    quad = parse_line(line)
+    assert quad is not None
+    assert quad.obj == Literal("a\nb")
+    assert quad.graph == Iri("http://example.com/ab")
+
+
+def test_reads_a_plain_term_that_is_followed_by_an_escaped_one():
+    quad = parse_line(r'_:n <http://schema.org/name> "plain" <http://example.com/a\u0062> .')
+    assert quad is not None
+    assert quad.obj == Literal("plain")
+    assert quad.graph == Iri("http://example.com/ab")
+
+
 def test_keeps_a_period_inside_a_literal():
     quad = parse_line(f'_:n <http://schema.org/name> "A. B ." <{PAGE}> .')
     assert quad is not None
@@ -87,6 +102,7 @@ def test_keeps_a_period_inside_a_literal():
         "# a comment",
         f"<http://example.com/a> <http://schema.org/geo> _:n <{PAGE}>",  # no terminator
         f"<http://example.com/a> <http://schema.org/geo> _:n <{PAGE}> . junk",  # trailing junk
+        f"<http://example.com/a> <http://schema.org/geo> _:n <{PAGE}> .x",  # one junk character
         "<http://example.com/a> <http://schema.org/geo> _:n .",  # no graph
         f"<http://example.com/a <http://schema.org/geo> _:n <{PAGE}> .",  # unterminated iri
         f'_:n <http://schema.org/name> "open <{PAGE}> .',  # unterminated literal
@@ -101,6 +117,11 @@ def test_keeps_a_period_inside_a_literal():
         r'_:n <http://schema.org/name> "cut off\\' + "\n",  # truncated escape
         '_:n <http://schema.org/name> "a\\',  # backslash at end of line
         r'_:n <http://schema.org/name> "a\u00',  # unicode escape cut off by line end
+        # Truncated after an escape has already been decoded, which is what a
+        # line cut at a shard boundary looks like to the escape-handling path.
+        r'_:n <http://schema.org/name> "a\" <http://example.com/g> .',
+        '_:n <http://schema.org/name> "a\\"b\\',
+        r'_:n <http://schema.org/name> "a\"b\u00',
         rf'_:n <http://schema.org/name> "a\u00" <{PAGE}> .',  # non-hex unicode escape
         f'_:n <http://schema.org/name> "x"@ <{PAGE}> .',  # empty language tag
         f'_:n <http://schema.org/name> "x"^^ <{PAGE}> .',  # datatype not an iri
