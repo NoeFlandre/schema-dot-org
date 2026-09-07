@@ -10,3 +10,4 @@ mutants/
 .mutmut-cache
 mutants.sqlite
 data/
+coverage.json
