@@ -45,11 +45,16 @@ class Pipeline:
 
     def _read(self) -> Iterator[str]:
         for location in self._locations:
+            if self._exhausted():
+                return
             for line in stream_lines(location):
-                if self._max_lines is not None and self._lines >= self._max_lines:
+                if self._exhausted():
                     return
                 self._lines += 1
                 yield line
+
+    def _exhausted(self) -> bool:
+        return self._max_lines is not None and self._lines >= self._max_lines
 
     def _counted(self, quads: Iterator[Quad]) -> Iterator[Quad]:
         for quad in quads:

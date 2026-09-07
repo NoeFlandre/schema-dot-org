@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from wdcgeo.dataset import SHARD_SIZE, size_category, write_dataset
+from wdcgeo.dataset import SHARD_SIZE, assemble, size_category, write_dataset
 from wdcgeo.extract import GeoText
 
 BASE = GeoText(
@@ -111,3 +111,44 @@ def test_card_documents_every_field_of_a_record(tmp_path):
 )
 def test_size_category_uses_the_hugging_face_bands(count, label):
     assert size_category(count) == label
+
+
+def part_directory(root, name, records, profile):
+    directory = root / name
+    write_dataset(records, directory, ["local"])
+    (directory / "profile.json").write_text(json.dumps(profile), encoding="utf-8")
+    (directory / "manifest.json").write_text(
+        json.dumps({"records": len(records)}), encoding="utf-8"
+    )
+    return directory
+
+
+def test_assemble_gathers_shards_profiles_and_one_card(tmp_path):
+    first = part_directory(tmp_path, "part_0", [BASE], {"records": 3, "hosts": 1})
+    second = part_directory(
+        tmp_path, "part_7", [BASE, replace(BASE, name="Two")], {"records": 5, "hosts": 2}
+    )
+    out = tmp_path / "dataset"
+
+    manifest = assemble([first, second], SOURCES, out)
+
+    assert manifest == {
+        "parts": 2,
+        "records": 3,
+        "shards": ["part-00000.jsonl.gz", "part-00001.jsonl.gz"],
+        "card": "README.md",
+    }
+    assert [len(read_shard(out, name)) for name in manifest["shards"]] == [1, 2]
+    assert json.loads((out / "profile.json").read_text(encoding="utf-8")) == {
+        "records": 8,
+        "hosts": 3,
+    }
+    card = (out / "README.md").read_text(encoding="utf-8")
+    assert "3 geolocated text records" in card
+    assert f"- `{SOURCES[0]}`\n" in card
+
+
+def test_assemble_needs_no_parts_at_all(tmp_path):
+    out = tmp_path / "dataset"
+    assert assemble([], [], out) == {"parts": 0, "records": 0, "shards": [], "card": "README.md"}
+    assert json.loads((out / "profile.json").read_text(encoding="utf-8")) == {}

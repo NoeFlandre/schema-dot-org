@@ -86,7 +86,13 @@ def test_refuses_incomplete_invocations(argv):
 
 def test_help_documents_every_option(capsys):
     printed = ""
-    for argv in (["--help"], ["profile", "--help"], ["export", "--help"], ["merge", "--help"]):
+    for argv in (
+        ["--help"],
+        ["profile", "--help"],
+        ["export", "--help"],
+        ["merge", "--help"],
+        ["assemble", "--help"],
+    ):
         with pytest.raises(SystemExit):
             cli.main(argv)
         printed += capsys.readouterr().out
@@ -120,3 +126,46 @@ def test_merge_needs_at_least_one_profile():
     with pytest.raises(SystemExit) as raised:
         cli.main(["merge"])
     assert raised.value.code == 2
+
+
+def test_export_leaves_its_manifest_in_the_dataset_directory(tmp_path, capsys):
+    out = tmp_path / "part_0"
+    assert cli.main(["export", source(tmp_path, "a.gz"), "--out", str(out)]) == 0
+    capsys.readouterr()
+    assert json.loads((out / "manifest.json").read_text(encoding="utf-8"))["records"] == 1
+
+
+def test_assemble_builds_one_dataset_from_the_parts_of_a_run(tmp_path, capsys):
+    parts = tmp_path / "parts"
+    for index, page in enumerate(["http://a.example.com/1", "http://b.example.com/1"]):
+        argv = [
+            "export",
+            source(tmp_path, f"{index}.gz", page=page),
+            "--out",
+            str(parts / f"part_{index * 7}"),
+        ]
+        assert cli.main(argv) == 0
+    capsys.readouterr()
+
+    argv = [
+        "assemble",
+        "--from",
+        str(parts),
+        "--part",
+        "0",
+        "--part",
+        "7",
+        "--out",
+        str(tmp_path / "d"),
+    ]
+    assert cli.main(argv) == 0
+
+    manifest = json.loads(capsys.readouterr().out)
+    assert manifest["parts"] == 2
+    assert manifest["records"] == 2
+    dataset = tmp_path / "d"
+    assert sorted(path.name for path in (dataset / "data").iterdir()) == manifest["shards"]
+    assert json.loads((dataset / "profile.json").read_text(encoding="utf-8"))["records"] == 2
+    card = (dataset / "README.md").read_text(encoding="utf-8")
+    assert f"- `{part_url(0)}`" in card
+    assert f"- `{part_url(7)}`" in card

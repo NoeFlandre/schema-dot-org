@@ -53,3 +53,15 @@ def test_reads_everything_when_max_lines_is_not_set(tmp_path):
     pipeline = Pipeline([write(tmp_path, "a.gz", QUADS)])
     list(pipeline.records())
     assert pipeline.counts()["lines"] == 3
+
+
+def test_does_not_open_a_location_it_will_not_read(tmp_path):
+    pipeline = Pipeline([str(tmp_path / "absent.gz")], max_lines=0)
+    assert list(pipeline.records()) == []
+    assert pipeline.counts()["lines"] == 0
+
+
+def test_does_not_open_the_next_location_once_the_cap_is_reached(tmp_path):
+    reached = write(tmp_path, "a.gz", QUADS)
+    pipeline = Pipeline([reached, str(tmp_path / "absent.gz")], max_lines=3)
+    assert len(list(pipeline.records())) == 1

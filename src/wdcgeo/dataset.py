@@ -13,7 +13,10 @@ import json
 from dataclasses import asdict
 from itertools import chain, islice
 from pathlib import Path
+from shutil import copyfile
 from typing import TYPE_CHECKING, Any
+
+from wdcgeo.profile import merge
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -44,7 +47,8 @@ def size_category(count: int) -> str:
     return _LARGEST_BAND
 
 
-def _write_card(directory: Path, records: int, sources: Sequence[str]) -> None:
+def write_card(directory: Path, records: int, sources: Sequence[str]) -> None:
+    """Write the dataset card for ``records`` records read from ``sources``."""
     template = Path(__file__).with_name("card.md").read_text(encoding="utf-8")
     card = template.format(
         records=f"{records:,}",
@@ -79,5 +83,35 @@ def write_dataset(
                 handle.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
                 written += 1
         shards.append(name)
-    _write_card(directory, written, sources)
+    write_card(directory, written, sources)
     return {"records": written, "shards": shards, "card": CARD_NAME}
+
+
+def assemble(parts: Sequence[Path], sources: Sequence[str], directory: Path) -> dict[str, Any]:
+    """Gather the datasets and profiles of separate parts into one dataset.
+
+    A run processes parts independently, so each writes its own shards, profile
+    and manifest. Assembling renumbers the shards into one series, merges the
+    profiles, and writes a single card naming the published parts rather than
+    the local copies a run happened to read.
+    """
+    data = directory / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    shards: list[str] = []
+    records = 0
+    reports: list[dict[str, Any]] = []
+    for part in parts:
+        for shard in sorted((part / "data").glob("*.jsonl.gz")):
+            shards.append(f"part-{len(shards):05d}.jsonl.gz")
+            copyfile(shard, data / shards[-1])
+        reports.append(_read_json(part / "profile.json"))
+        records += _read_json(part / "manifest.json")["records"]
+    (directory / "profile.json").write_text(
+        json.dumps(merge(reports), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    write_card(directory, records, sources)
+    return {"parts": len(parts), "records": records, "shards": shards, "card": CARD_NAME}
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))

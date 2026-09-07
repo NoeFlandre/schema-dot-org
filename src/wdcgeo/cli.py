@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wdcgeo.corpus import part_url
-from wdcgeo.dataset import write_dataset
+from wdcgeo.dataset import assemble, write_dataset
 from wdcgeo.extract import deduplicate
 from wdcgeo.pipeline import Pipeline
 from wdcgeo.profile import Accumulator, merge
@@ -26,6 +26,8 @@ PROFILE_OUT_HELP = "write the profile here instead of stdout"
 EXPORT_OUT_HELP = "directory to write the dataset into"
 MERGE_HELP = "Fold profiles of separate parts into one."
 REPORT_HELP = "a profile written by the profile command"
+ASSEMBLE_HELP = "Gather the parts of a run into one dataset."
+FROM_HELP = "directory holding the part_N directories"
 
 
 def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
@@ -48,6 +50,16 @@ def _parser() -> argparse.ArgumentParser:
     merge_command = commands.add_parser("merge", help=MERGE_HELP, description=MERGE_HELP)
     merge_command.add_argument("reports", nargs="+", metavar="REPORT", help=REPORT_HELP)
     merge_command.add_argument("--out", type=Path, metavar="PATH", help=PROFILE_OUT_HELP)
+    assemble_command = commands.add_parser(
+        "assemble", help=ASSEMBLE_HELP, description=ASSEMBLE_HELP
+    )
+    assemble_command.add_argument("--from", dest="parts", type=Path, required=True, help=FROM_HELP)
+    assemble_command.add_argument(
+        "--part", type=int, action="append", required=True, metavar="N", help=PART_HELP
+    )
+    assemble_command.add_argument(
+        "--out", type=Path, metavar="DIR", required=True, help=EXPORT_OUT_HELP
+    )
     return parser
 
 
@@ -63,6 +75,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line, returning the process exit code."""
     parser = _parser()
     arguments = parser.parse_args(argv)
+    if arguments.command == "assemble":
+        directories = [arguments.parts / f"part_{part}" for part in arguments.part]
+        sources = [part_url(part) for part in arguments.part]
+        _report(assemble(directories, sources, arguments.out), None)
+        return 0
     if arguments.command == "merge":
         reports = [json.loads(Path(name).read_text(encoding="utf-8")) for name in arguments.reports]
         _report(merge(reports), arguments.out)
@@ -79,6 +96,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     records = deduplicate(accumulator.tap(pipeline.records()))
     manifest = write_dataset(records, arguments.out, locations)
     _report(_with_input(accumulator.to_dict(), pipeline), arguments.out / "profile.json")
+    _report(manifest, arguments.out / "manifest.json")
     _report(manifest, None)
     return 0
 

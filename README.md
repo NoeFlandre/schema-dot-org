@@ -1,1 +1,59 @@
-A README is written later in the task.
+# wdcgeo — geolocated text from Web Data Commons
+
+What text does the web publish next to coordinates, and is there enough of it
+to be useful? This repository answers that for the `GeoCoordinates`
+class-specific subset of the
+[Web Data Commons schema.org series, release 2024-12](https://webdatacommons.org/structureddata/2024-12/stats/schema_org_subsets.html)
+— 3.18 billion quads, 25.3 million pages, 567,265 hosts, 33 GB gzipped — and
+ships the tools that produced the answer.
+
+```bash
+uv sync
+uv run wdcgeo profile --part 0 --max-lines 2000000   # a minute, no disk used
+```
+
+- **[Documentation](docs/index.md)** — what the corpus holds, what the sample
+  found, how to run it, and how it is built.
+- **Data** — <https://huggingface.co/datasets/NoeFlandre/schema-dot-org>
+
+## What it does
+
+`wdcgeo` streams parts of the subset straight from the mirror, parses the
+corpus dialect of N-Quads, pairs every usable coordinate pair with the text
+published next to it on the same page, and either profiles the result or writes
+it out as a Hub-ready dataset.
+
+```bash
+uv run wdcgeo profile  --part 0                       # JSON profile of a part
+uv run wdcgeo export   --part 0 --out dataset/part_0  # shards + card + profile
+uv run wdcgeo merge    data/parts/*/profile.json      # fold profiles into one
+uv run wdcgeo assemble --from data/parts --part 0 --out data/dataset
+scripts/run_sample.sh 7 4                             # every 7th part, 4 workers
+```
+
+The interesting part is not the plumbing but what the corpus turns out to be
+like: a `GeoCoordinates` entity is almost always bare, so the text has to be
+found on the parent entity that links to it; property IRIs come in two
+spellings and dropping one loses every Microdata page; and site-wide markup
+repeats one business across every page of its host, so raw record counts
+overstate what is there. [Findings](docs/findings.md) has the numbers.
+
+## Development
+
+```bash
+uv run pytest --cov=wdcgeo   # 100% of lines and branches, enforced
+uv run ruff check src tests  # every ruff rule, minus documented exceptions
+uv run ty check
+uv run mutmut run            # gate: zero surviving mutants
+uv run mkdocs serve
+```
+
+Written test-first throughout, with mutation testing as the real gate on the
+tests. [Design and quality](docs/design.md) explains the module boundaries and
+the three design changes mutation testing forced.
+
+## Licence
+
+Apache 2.0, see [LICENSE](LICENSE). The underlying markup belongs to the
+crawled sites; Web Data Commons distributes the extraction under the terms on
+its own site.
