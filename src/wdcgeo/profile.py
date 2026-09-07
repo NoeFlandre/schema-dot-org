@@ -18,11 +18,12 @@ together -- and are named for what they actually measure:
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from math import floor
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from wdcgeo.extract import GeoText
 
@@ -36,6 +37,9 @@ GRID_DEGREES = 10
 """Side of a grid cell, labelled by the coordinates of its south-west corner."""
 
 TEXT_FIELDS = ("name", "description", "address")
+
+STRUCTURAL_SECTIONS = frozenset({"buckets", "coordinates", "duplication", "input"})
+"""Sections whose keys are fixed, so merging must not re-rank them."""
 
 _BUCKETS = (*(f"<={limit}" for limit in LENGTH_LIMITS), f">{LENGTH_LIMITS[-1]}")
 
@@ -59,10 +63,11 @@ def _floor_to_cell(value: float) -> int:
     return floor(value / GRID_DEGREES) * GRID_DEGREES
 
 
-class _Profile:
+class Accumulator:
     """Counters for one pass over a stream of records."""
 
     def __init__(self) -> None:
+        """Start every counter at zero."""
         self.records = 0
         self.pages = 0
         self.without_type = 0
@@ -100,6 +105,12 @@ class _Profile:
         self._add_text(record)
         self._add_coordinates(record)
         self._add_duplication(record, previous)
+
+    def tap(self, records: Iterable[GeoText]) -> Iterator[GeoText]:
+        """Fold every record on its way through, leaving the stream unchanged."""
+        for record in records:
+            self.add(record)
+            yield record
 
     def _add_text(self, record: GeoText) -> None:
         present = 0
@@ -166,9 +177,42 @@ class _Profile:
         }
 
 
+def _merge_pair(into: dict[str, Any], report: Mapping[str, Any]) -> dict[str, Any]:
+    for key, value in report.items():
+        if isinstance(value, Mapping):
+            into[key] = _merge_pair(into.get(key, {}), value)
+        else:
+            into[key] = into.get(key, 0) + value
+    return into
+
+
+def _ranked(section: dict[str, Any], name: str = "") -> dict[str, Any]:
+    if name not in STRUCTURAL_SECTIONS and all(isinstance(v, int) for v in section.values()):
+        ordered = sorted(section.items(), key=lambda item: (-item[1], item[0]))
+        return dict(ordered[:TOP_N])
+    return {
+        key: _ranked(value, key) if isinstance(value, dict) else value
+        for key, value in section.items()
+    }
+
+
+def merge(reports: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """Fold profiles of separate parts into one report.
+
+    Counts add up; every ranking is re-ranked and cut back to the top entries,
+    which is why a merged ranking is exact at the head and can miss an entry
+    that stayed below every part's cut. ``hosts`` adds up too, so a host that
+    appears in two parts is counted twice: the figure is an upper bound.
+    """
+    merged: dict[str, Any] = {}
+    for report in reports:
+        _merge_pair(merged, report)
+    return _ranked(merged)
+
+
 def profile(records: Iterable[GeoText]) -> dict[str, Any]:
     """Profile ``records`` in one pass, returning JSON-ready aggregates."""
-    counters = _Profile()
+    counters = Accumulator()
     for record in records:
         counters.add(record)
     return counters.to_dict()

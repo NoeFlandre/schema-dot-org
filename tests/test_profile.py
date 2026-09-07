@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from wdcgeo.extract import GeoText
-from wdcgeo.profile import TOP_N, profile
+from wdcgeo.profile import TOP_N, Accumulator, merge, profile
 
 PAGE = "http://example.com/p/1"
 BUCKETS = {"<=20": 0, "<=50": 0, "<=100": 0, "<=250": 0, "<=1000": 0, ">1000": 0}
@@ -221,3 +221,83 @@ def test_counts_distinct_places_within_each_host():
     )
     assert got["records"] == 5
     assert got["duplication"]["distinct_places"] == 4
+
+
+def test_accumulator_folds_records_one_at_a_time():
+    accumulator = Accumulator()
+    accumulator.add(record(name="Cafe"))
+    accumulator.add(record(name="Other"))
+    assert accumulator.to_dict()["records"] == 2
+
+
+def test_tap_profiles_records_while_passing_them_through():
+    accumulator = Accumulator()
+    passed = list(accumulator.tap([record(name="Cafe"), record(name="Other")]))
+    assert [r.name for r in passed] == ["Cafe", "Other"]
+    assert accumulator.to_dict()["text"]["name"]["records"] == 2
+
+
+def test_merge_sums_the_counts_of_every_report():
+    first = profile([record(name="Cafe", types=("Restaurant",))])
+    second = profile([record(name="Other", types=("Hotel",), host="other.example.org")])
+    merged = merge([first, second])
+    assert merged["records"] == 2
+    assert merged["hosts"] == 2
+    assert merged["types"] == {"Hotel": 1, "Restaurant": 1}
+    assert merged["top_level_domains"] == {"com": 1, "org": 1}
+    assert merged["text"]["name"]["records"] == 2
+    assert merged["text"]["name"]["buckets"]["<=20"] == 2
+
+
+def test_merge_adds_up_entries_that_appear_in_several_reports():
+    one = profile([record(host="a.example.com", types=("Restaurant",))])
+    two = profile([record(host="a.example.com", types=("Restaurant",))])
+    merged = merge([one, two])
+    assert merged["top_hosts"] == {"a.example.com": 2}
+    assert merged["types"] == {"Restaurant": 2}
+
+
+def test_merge_keeps_only_the_top_entries_of_a_ranking():
+    reports = [profile([record(host=f"h{index}.example.com")]) for index in range(TOP_N + 5)]
+    merged = merge(reports)
+    assert len(merged["top_hosts"]) == TOP_N
+    assert merged["hosts"] == TOP_N + 5
+
+
+def test_merge_ranks_by_count_then_by_name():
+    reports = [
+        profile([record(host="rare.example.com")]),
+        profile([record(host="common.example.com")] * 2),
+        profile([record(host="also.example.com")]),
+    ]
+    merged = merge(reports)
+    assert list(merged["top_hosts"]) == [
+        "common.example.com",
+        "also.example.com",
+        "rare.example.com",
+    ]
+
+
+def test_merge_carries_extra_sections_such_as_the_input_counts():
+    reports = [
+        {**profile([record()]), "input": {"locations": 1, "lines": 10}},
+        {**profile([record()]), "input": {"locations": 1, "lines": 5}},
+    ]
+    assert merge(reports)["input"] == {"locations": 2, "lines": 15}
+
+
+def test_merge_of_nothing_is_empty():
+    assert merge([]) == {}
+
+
+def test_merge_of_one_report_returns_it_unchanged():
+    only = profile([record(name="Cafe")])
+    assert merge([only]) == only
+
+
+def test_merge_keeps_sections_with_fixed_keys_in_their_own_order():
+    reports = [profile([record(description="x" * 1500)]), profile([record(description="y" * 10)])]
+    merged = merge(reports)
+    assert list(merged["text"]["description"]["buckets"]) == list(BUCKETS)
+    assert list(merged["coordinates"]) == ["null_island", "whole_degrees"]
+    assert list(merged["duplication"]) == ["consecutive_repeats", "distinct_places"]

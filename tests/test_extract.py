@@ -1,6 +1,6 @@
 import pytest
 
-from wdcgeo.extract import GeoText, geolocated_texts
+from wdcgeo.extract import GeoText, deduplicate, geolocated_texts
 from wdcgeo.quads import parse_quads
 
 PAGE = "http://www.cafe-zero.fr/venues/1"
@@ -371,3 +371,34 @@ def test_yields_nothing_for_a_page_without_coordinates():
 
 def test_yields_nothing_for_no_quads():
     assert records() == []
+
+
+def geo(page, name, latitude=48.0):
+    return [
+        line("_:place", f"{S}name", f'"{name}"', page),
+        line("_:place", f"{S}latitude", f'"{latitude}"', page),
+        line("_:place", f"{S}longitude", '"2.0"', page),
+    ]
+
+
+def test_deduplicate_drops_a_place_repeated_within_one_host():
+    lines = [*geo(PAGE, "Cafe Zero"), *geo(f"{PAGE}/menu", "Cafe Zero")]
+    assert [r.page_url for r in deduplicate(geolocated_texts(parse_quads(lines)))] == [PAGE]
+
+
+def test_deduplicate_keeps_a_different_place_on_the_same_host():
+    lines = [*geo(PAGE, "Cafe Zero"), *geo(f"{PAGE}/two", "Cafe Zero", latitude=49.0)]
+    assert [r.latitude for r in deduplicate(geolocated_texts(parse_quads(lines)))] == [48.0, 49.0]
+
+
+def test_deduplicate_keeps_the_same_place_on_another_host():
+    lines = [*geo(PAGE, "Cafe Zero"), *geo(OTHER_PAGE, "Cafe Zero")]
+    assert [r.host for r in deduplicate(geolocated_texts(parse_quads(lines)))] == [
+        "www.cafe-zero.fr",
+        "guide.example.org",
+    ]
+
+
+def test_deduplicate_forgets_a_host_once_its_run_of_pages_ends():
+    lines = [*geo(PAGE, "Cafe Zero"), *geo(OTHER_PAGE, "Elsewhere"), *geo(PAGE, "Cafe Zero")]
+    assert len(list(deduplicate(geolocated_texts(parse_quads(lines))))) == 3

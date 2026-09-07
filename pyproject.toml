@@ -56,6 +56,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D", "PLR2004", "INP001", "S", "SLF001"]
+"src/wdcgeo/cli.py" = ["T201"]  # a command line prints
 
 [tool.ty.src]
 include = ["src", "tests"]

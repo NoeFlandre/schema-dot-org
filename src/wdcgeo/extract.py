@@ -237,3 +237,23 @@ def geolocated_texts(quads: Iterable[Quad]) -> Iterator[GeoText]:
     """Yield one :class:`GeoText` per geolocated entity, page by page."""
     for page in _pages(quads):
         yield from _page_records(page)
+
+
+def deduplicate(records: Iterable[GeoText]) -> Iterator[GeoText]:
+    """Drop records repeating a coordinate-and-name pair already seen on their host.
+
+    Site-wide markup republishes one business on every page of its site, so the
+    raw stream is mostly repetition. Records arrive grouped by host, so keeping
+    only the places of the current host bounds what has to be remembered; a host
+    that comes back later starts over.
+    """
+    host: str | None = None
+    places: set[tuple[float, float, str | None]] = set()
+    for record in records:
+        if record.host != host:
+            host = record.host
+            places = set()
+        place = (record.latitude, record.longitude, record.name)
+        if place not in places:
+            places.add(place)
+            yield record
