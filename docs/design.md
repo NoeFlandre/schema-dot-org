@@ -42,34 +42,61 @@ it says every line ran, never that anything was checked.
 
 `mutmut` rewrites the source one edit at a time and reruns the suite. A mutant
 that survives is a behaviour no test pins down. The gate here is **zero
-survivors** over `src/wdcgeo/`.
+survivors** over `src/wdcgeo/`: of 1,125 mutants, 1,122 are killed by a failing
+assertion and 3 by timeout.
 
-It earned its keep three times, each time by changing the design rather than
-by adding a test:
+It earned its keep by changing the design, not just by adding tests:
 
 * **A redundant condition in coordinate parsing.** `if "," in cleaned and "."
   not in cleaned` guarded a comma-to-dot substitution. No input could
   distinguish the guarded version from the unguarded one — no float spelling
   contains a comma, so the substitution cannot spoil a value that already
   parses. The guard was deleted, not covered.
-* **Three unobservable sentinels in the profiler.** Separate `_page`, `_host`
-  and `_previous` fields initialised to `None` could each be mutated to `""`
-  with no visible effect. They collapsed into one reference to the previous
-  record, which a mutant cannot replace with a string without the next
-  attribute access failing. One piece of state replaced three.
-* **A dead initialiser.** The profiler's place set was reset on the first
-  record, making its initial value unreachable. Resetting only on a host change
-  made it load-bearing.
+* **Unobservable sentinels, twice.** Separate `_page`, `_host` and `_previous`
+  fields initialised to `None` could each be mutated to `""` with no visible
+  effect. They collapsed into one reference to the previous record, which a
+  mutant cannot replace with a string without the next attribute access
+  failing. `deduplicate` had the same sentinel and lost it the same way. One
+  piece of state replaced three; a dead initialiser became load-bearing.
+* **A default argument no caller could observe.** `_ranked(section, name="")`
+  had a default that only the top-level call used, and any other string behaved
+  identically. Splitting the function in two removed the argument.
 
-Three mutants are reported as killed by timeout rather than by a failing
-assertion: each moves the scanner's cursor backwards or resets it, so the
-scanner loops forever. A mutant that hangs the suite is detected, which is what
-being killed means here.
+Three mutants are killed by timeout rather than by an assertion: each moves the
+scanner's cursor backwards or resets it, so the scanner loops forever. A mutant
+that hangs the suite is detected, which is what being killed means here. Two
+others used to "die" the same way for a bad reason — they ignored
+`--max-lines 0` and started a real 140 MB download until the run timed out. A
+guard in `tests/conftest.py` now denies every host but the local test server,
+so those mutants fail on an assertion and the suite is provably offline.
 
-Text that only ever gets printed is kept out of code so it cannot become
-string-literal mutants: the dataset card is a template file beside the module,
-and every command-line help string is a module constant that a test asserts
-appears in `--help` output.
+### Text that is only ever printed
+
+Prose in string literals becomes a wall of survivors, so it is kept out of code
+where possible and pinned where not:
+
+* the dataset card is a template file beside the module;
+* every command-line help string is a module constant, and the exact `--help`
+  output of all five commands is asserted verbatim. Program name, metavars and
+  layout are the published interface; 93 mutants were hiding in that wiring.
+
+### The five suppressed mutants
+
+Five lines carry `# pragma: no mutate`, and each carries only an encoding
+argument. Mutating `encoding="utf-8"` to `encoding=None`, to the alias
+`"UTF-8"`, or to nothing at all is unobservable in-process, because the
+machine's own default encoding is UTF-8 — the mutant and the original do the
+same thing.
+
+Rather than accept them, the property is tested where it can be seen: one test
+runs a full export in a subprocess under `LC_ALL=C` with locale coercion and
+UTF-8 mode disabled, where the default encoding really is ASCII. Left to the
+locale, that run raises `UnicodeDecodeError` on the corpus or writes mojibake
+into the dataset. `mutmut` mutates in-process and cannot reach a subprocess, so
+it cannot see that test kill anything — hence the pragma rather than a silent
+survivor. Every other literal was hoisted off those five lines first
+(`ENCODING`, `_SHARD_MODE`, `_DECODE_ERRORS`, `PROFILE_NAME`, and the text
+helpers in `wdcgeo/__init__.py`), so the suppression covers nothing else.
 
 ## YAGNI, held to
 
