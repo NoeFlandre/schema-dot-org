@@ -29,6 +29,7 @@ SHARD_SIZE = 250_000
 
 CARD_NAME = "README.md"
 PROFILE_NAME = "profile.json"
+MANIFEST_NAME = "manifest.json"
 
 _SHARD_MODE = "wt"
 
@@ -117,8 +118,8 @@ def assemble(parts: Sequence[Path], sources: Sequence[str], directory: Path) -> 
         for shard in sorted((part / "data").glob("*.jsonl.gz")):
             shards.append(f"part-{len(shards):05d}.jsonl.gz")
             copyfile(shard, data / shards[-1])
-        reports.append(read_json(part / "profile.json"))
-        records += read_json(part / "manifest.json")["records"]
+        reports.append(read_json(part / PROFILE_NAME))
+        records += read_json(part / MANIFEST_NAME)["records"]
     write_text(directory / PROFILE_NAME, to_json(merge(reports)) + "\n")
     write_card(directory, records, sources)
     return {"parts": len(parts), "records": records, "shards": shards, "card": CARD_NAME}

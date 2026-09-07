@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, Any
 
 from wdcgeo import ENCODING, write_text
 from wdcgeo.corpus import part_url
-from wdcgeo.dataset import assemble, read_json, to_json, write_dataset
+from wdcgeo.dataset import (
+    MANIFEST_NAME,
+    PROFILE_NAME,
+    assemble,
+    read_json,
+    to_json,
+    write_dataset,
+)
 from wdcgeo.extract import deduplicate
 from wdcgeo.pipeline import Pipeline
 from wdcgeo.profile import Accumulator, merge
@@ -77,41 +84,51 @@ def _report(report: dict[str, Any], out: Path | None) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line, returning the process exit code."""
     # sys.stdout is a TextIOWrapper at runtime; typeshed types it as plain TextIO.
+    # Mutating the encoding away is invisible in a UTF-8 environment, hence the pragma.
     sys.stdout.reconfigure(encoding=ENCODING)  # ty: ignore[unresolved-attribute] # pragma: no mutate
     parser = _parser()
     arguments = parser.parse_args(argv)
     if arguments.command == "assemble":
-        directories = [arguments.parts / f"part_{part}" for part in arguments.part]
-        sources = [part_url(part) for part in arguments.part]
-        _report(assemble(directories, sources, arguments.out), None)
-        return 0
+        return _assemble(arguments)
     if arguments.command == "merge":
-        reports = [read_json(Path(name)) for name in arguments.reports]
-        _report(merge(reports), arguments.out)
-        return 0
+        return _merge(arguments)
     locations = [*arguments.sources, *(part_url(part) for part in arguments.part or ())]
     if not locations:
         parser.error(f"give at least one SOURCE or --part: {SOURCE_HELP}")
     pipeline = Pipeline(locations, max_lines=arguments.max_lines)
     if arguments.command == "profile":
-        report = profile_report(pipeline)
-        _report(report, arguments.out)
-        return 0
-    accumulator = Accumulator()
-    records = deduplicate(accumulator.tap(pipeline.records()))
-    manifest = write_dataset(records, arguments.out, locations)
-    _report(_with_input(accumulator.to_dict(), pipeline), arguments.out / "profile.json")
-    _report(manifest, arguments.out / "manifest.json")
-    _report(manifest, None)
+        return _profile(pipeline, arguments.out)
+    return _export(pipeline, locations, arguments.out)
+
+
+def _assemble(arguments: argparse.Namespace) -> int:
+    directories = [arguments.parts / f"part_{part}" for part in arguments.part]
+    sources = [part_url(part) for part in arguments.part]
+    _report(assemble(directories, sources, arguments.out), None)
     return 0
 
 
-def profile_report(pipeline: Pipeline) -> dict[str, Any]:
-    """Profile everything ``pipeline`` yields, including what it read."""
+def _merge(arguments: argparse.Namespace) -> int:
+    reports = [read_json(Path(name)) for name in arguments.reports]
+    _report(merge(reports), arguments.out)
+    return 0
+
+
+def _profile(pipeline: Pipeline, out: Path | None) -> int:
     accumulator = Accumulator()
     for record in pipeline.records():
         accumulator.add(record)
-    return _with_input(accumulator.to_dict(), pipeline)
+    _report(_with_input(accumulator.to_dict(), pipeline), out)
+    return 0
+
+
+def _export(pipeline: Pipeline, locations: Sequence[str], out: Path) -> int:
+    accumulator = Accumulator()
+    manifest = write_dataset(deduplicate(accumulator.tap(pipeline.records())), out, locations)
+    _report(_with_input(accumulator.to_dict(), pipeline), out / PROFILE_NAME)
+    _report(manifest, out / MANIFEST_NAME)
+    _report(manifest, None)
+    return 0
 
 
 def _with_input(report: dict[str, Any], pipeline: Pipeline) -> dict[str, Any]:

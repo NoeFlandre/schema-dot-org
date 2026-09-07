@@ -13,7 +13,7 @@ what the next module up needs, and nothing else.
 | `corpus` | `part_url`, `stream_lines` | where the subset lives, and streaming a part from a URL or a path, gzipped or plain |
 | `dataset` | `write_dataset`, `assemble`, `write_card` | the Hub's on-disk layout, shard rotation, and the card |
 | `pipeline` | `Pipeline.records`, `Pipeline.counts` | composing the four above, and counting what survived each stage |
-| `cli` | `main` | argument parsing and printing, and nothing else |
+| `cli` | `main` | argument parsing and printing, and nothing else: one small function per command |
 
 The command line holds no logic: it resolves arguments to locations, hands them
 to `Pipeline`, and prints what comes back. `profile.Accumulator.tap` is what
@@ -42,8 +42,8 @@ it says every line ran, never that anything was checked.
 
 `mutmut` rewrites the source one edit at a time and reruns the suite. A mutant
 that survives is a behaviour no test pins down. The gate here is **zero
-survivors** over `src/wdcgeo/`: of 1,125 mutants, 1,122 are killed by a failing
-assertion and 3 by timeout.
+survivors** over `src/wdcgeo/`: of 1,126 mutants, 1,122 are killed by a failing
+assertion and 4 by timeout.
 
 It earned its keep by changing the design, not just by adding tests:
 
@@ -62,7 +62,7 @@ It earned its keep by changing the design, not just by adding tests:
   had a default that only the top-level call used, and any other string behaved
   identically. Splitting the function in two removed the argument.
 
-Three mutants are killed by timeout rather than by an assertion: each moves the
+Four mutants are killed by timeout rather than by an assertion: each moves the
 scanner's cursor backwards or resets it, so the scanner loops forever. A mutant
 that hangs the suite is detected, which is what being killed means here. Two
 others used to "die" the same way for a bad reason — they ignored

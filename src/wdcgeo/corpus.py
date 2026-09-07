@@ -55,9 +55,8 @@ def stream_lines(location: str) -> Iterator[str]:
     """Yield the lines of a part, from a URL or a path, gzipped or plain."""
     with _opened(location) as raw:
         stream = gzip.GzipFile(fileobj=raw) if location.endswith(".gz") else raw
-        # pragma: encoding mutants are unobservable in-process; the property is
-        # tested from a subprocess under an ASCII locale instead.
-        wrapper = TextIOWrapper(
-            stream, encoding=ENCODING, errors=_DECODE_ERRORS
-        )  # pragma: no mutate
-        yield from wrapper
+        # The encoding is stated rather than inherited from the locale; see
+        # tests/test_cli.py for the run that proves it. Mutating it away is
+        # invisible in a UTF-8 environment, hence the pragma.
+        text = TextIOWrapper(stream, encoding=ENCODING, errors=_DECODE_ERRORS)  # pragma: no mutate
+        yield from text
