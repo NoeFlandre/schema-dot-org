@@ -12,6 +12,7 @@ what the next module up needs, and nothing else.
 | `profile` | `profile`, `Accumulator`, `merge` | single-pass aggregation in bounded memory, and merging the reports of parts processed apart |
 | `corpus` | `part_url`, `stream_lines` | where the subset lives, and streaming a part from a URL or a path, gzipped or plain |
 | `dataset` | `write_dataset`, `assemble`, `write_card` | the Hub's on-disk layout, shard rotation, and the card |
+| `density` | `cell`, `density`, `grid_shape` | counting millions of coordinates into an equirectangular grid, with the poles and the dateline held inside it |
 | `pipeline` | `Pipeline.records`, `Pipeline.counts` | composing the four above, and counting what survived each stage |
 | `cli` | `main` | argument parsing and printing, and nothing else: one small function per command |
 
@@ -100,7 +101,7 @@ so those mutants fail on an assertion and the suite is provably offline.
 Prose in string literals becomes a wall of survivors, so it is kept out of code
 where possible and pinned where not:
 
-* the dataset card is a template file beside the module;
+* the dataset card and its map caption are template files beside the module;
 * every command-line help string is a module constant, and the exact `--help`
   output of all five commands is asserted verbatim. Program name, metavars and
   layout are the published interface; 93 mutants were hiding in that wiring.
@@ -142,6 +143,10 @@ Things deliberately not built, and why:
   run script already does the retrying, and the library stays a library.
 * **No download command.** `stream_lines` reads a URL as readily as a path, so
   storing a part first is a choice the caller makes, not a feature.
+* **No plotting library in the package.** `density` counts coordinates into a
+  grid and stops there, because that part is worth testing and mutating;
+  matplotlib draws the result from a script, as a development dependency, so
+  the package itself still installs with nothing behind it.
 * **No Parquet, no `datasets` dependency.** Gzipped JSON Lines is what the Hub
   reads without configuration, and the standard library writes it.
 * **No coordinate reverse geocoding, no language detection, no text cleaning
@@ -154,8 +159,11 @@ Things deliberately not built, and why:
 
 ## Scripts are not library code
 
-`scripts/` holds two runnable things — `run_sample.sh`, which orchestrates a
-run, and `domain_stats.py`, which summarises a side file. They are deliberately
+`scripts/` holds four runnable things — `run_corpus.sh` and `run_sample.sh`,
+which orchestrate a full and a sampled run; `domain_stats.py`, which summarises
+a side file; `quality_scan.py`, which counts defects in exported records; and
+`render_map.py`, which draws the density map with matplotlib. They are
+deliberately
 outside `src/`: they are not imported, not covered by the coverage gate and not
 mutated, because they encode how *this* exploration was run rather than
 behaviour anyone depends on.

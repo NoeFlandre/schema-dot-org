@@ -4,7 +4,14 @@ from dataclasses import replace
 
 import pytest
 
-from wdcgeo.dataset import SHARD_SIZE, assemble, size_category, write_dataset
+from wdcgeo.dataset import (
+    CARD_NAME,
+    MAP_NAME,
+    SHARD_SIZE,
+    assemble,
+    size_category,
+    write_dataset,
+)
 from wdcgeo.extract import GeoText
 
 BASE = GeoText(
@@ -166,3 +173,21 @@ def test_assembles_into_a_directory_that_already_holds_a_dataset(tmp_path):
     out = tmp_path / "dataset"
     assemble([part], SOURCES, out)
     assert assemble([part], SOURCES, out)["records"] == 1
+
+
+def test_card_has_no_map_section_by_default(tmp_path):
+    write_dataset([BASE], tmp_path, SOURCES)
+    card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
+    assert "Where the records are" not in card
+    # Nothing at all stands where the section would go.
+    assert "\n\n## Parts read" in card
+
+
+def test_card_shows_the_map_when_one_is_named(tmp_path):
+    part = part_directory(tmp_path, "part_0", [BASE], {"records": 1})
+    out = tmp_path / "dataset"
+    assemble([part], SOURCES, out, MAP_NAME)
+    card = (out / CARD_NAME).read_text(encoding="utf-8")
+    assert "## Where the records are" in card
+    assert f"![Density of the records over the world]({MAP_NAME})" in card
+    assert card.index("Where the records are") < card.index("## Parts read")

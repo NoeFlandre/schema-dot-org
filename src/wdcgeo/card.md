@@ -31,7 +31,7 @@ because site-wide markup republishes one business on every page of its site.
 Coordinates are kept exactly as published, including 0/0 and whole-degree
 values, so that quality filtering stays the consumer's decision.
 
-## Parts read
+{map_section}## Parts read
 
 {sources}
 

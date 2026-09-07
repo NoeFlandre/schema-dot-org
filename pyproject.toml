@@ -19,6 +19,7 @@ dev = [
     "mutmut>=3.7",
     "mkdocs-material>=9.7",
     "radon>=6.0.1",
+    "matplotlib>=3.11.1",
 ]
 
 [build-system]

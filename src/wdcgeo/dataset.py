@@ -30,8 +30,11 @@ SHARD_SIZE = 250_000
 CARD_NAME = "README.md"
 PROFILE_NAME = "profile.json"
 MANIFEST_NAME = "manifest.json"
+MAP_NAME = "map.png"
 
 _SHARD_MODE = "wt"
+_CARD_TEMPLATE = "card.md"
+_MAP_TEMPLATE = "map.md"
 
 _SIZE_BANDS = (
     (1_000, "n<1K"),
@@ -61,13 +64,29 @@ def size_category(count: int) -> str:
     return _LARGEST_BAND
 
 
-def write_card(directory: Path, records: int, sources: Sequence[str]) -> None:
+def _template(name: str) -> str:
+    return read_text(Path(__file__).with_name(name))
+
+
+def _map_section(map_image: str | None) -> str:
+    if map_image is None:
+        return ""
+    return _template(_MAP_TEMPLATE).format(map_image=map_image)
+
+
+def write_card(
+    directory: Path,
+    records: int,
+    sources: Sequence[str],
+    map_image: str | None = None,
+) -> None:
     """Write the dataset card for ``records`` records read from ``sources``."""
-    template = read_text(Path(__file__).with_name("card.md"))
+    template = _template(_CARD_TEMPLATE)
     card = template.format(
         records=f"{records:,}",
         size_category=size_category(records),
         sources="\n".join(f"- `{source}`" for source in sources),
+        map_section=_map_section(map_image),
     )
     write_text(directory / CARD_NAME, card)
 
@@ -101,7 +120,12 @@ def write_dataset(
     return {"records": written, "shards": shards, "card": CARD_NAME}
 
 
-def assemble(parts: Sequence[Path], sources: Sequence[str], directory: Path) -> dict[str, Any]:
+def assemble(
+    parts: Sequence[Path],
+    sources: Sequence[str],
+    directory: Path,
+    map_image: str | None = None,
+) -> dict[str, Any]:
     """Gather the datasets and profiles of separate parts into one dataset.
 
     A run processes parts independently, so each writes its own shards, profile
@@ -121,7 +145,7 @@ def assemble(parts: Sequence[Path], sources: Sequence[str], directory: Path) -> 
         reports.append(read_json(part / PROFILE_NAME))
         records += read_json(part / MANIFEST_NAME)["records"]
     write_text(directory / PROFILE_NAME, to_json(merge(reports)) + "\n")
-    write_card(directory, records, sources)
+    write_card(directory, records, sources, map_image)
     return {"parts": len(parts), "records": records, "shards": shards, "card": CARD_NAME}
 
 

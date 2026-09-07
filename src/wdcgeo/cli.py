@@ -36,6 +36,7 @@ MERGE_HELP = "Fold profiles of separate parts into one."
 REPORT_HELP = "a profile written by the profile command"
 ASSEMBLE_HELP = "Gather the parts of a run into one dataset."
 FROM_HELP = "directory holding the part_N directories"
+MAP_HELP = "image to show in the card, e.g. map.png"
 
 
 def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
@@ -70,6 +71,7 @@ def _parser() -> argparse.ArgumentParser:
     assemble_command.add_argument(
         "--out", type=Path, metavar="DIR", required=True, help=EXPORT_OUT_HELP
     )
+    assemble_command.add_argument("--map", dest="map_image", metavar="NAME", help=MAP_HELP)
     return parser
 
 
@@ -107,7 +109,7 @@ def _over_a_corpus(arguments: argparse.Namespace, parser: argparse.ArgumentParse
 def _assemble(arguments: argparse.Namespace) -> int:
     directories = [arguments.parts / f"part_{part}" for part in arguments.part]
     sources = [part_url(part) for part in arguments.part]
-    _report(assemble(directories, sources, arguments.out), None)
+    _report(assemble(directories, sources, arguments.out, arguments.map_image), None)
     return 0
 
 

@@ -200,6 +200,19 @@ def test_error_says_what_is_missing(capsys):
     assert "give at least one SOURCE or --part" in capsys.readouterr().err
 
 
+def test_assemble_shows_the_map_in_the_card_when_asked(tmp_path, capsys):
+    parts = tmp_path / "parts"
+    assert cli.main(["export", source(tmp_path, "a.gz"), "--out", str(parts / "part_0")]) == 0
+    capsys.readouterr()
+    out = tmp_path / "d"
+    argv = ["assemble", "--from", str(parts), "--part", "0", "--out", str(out), "--map", "map.png"]
+    assert cli.main(argv) == 0
+    capsys.readouterr()
+    assert "![Density of the records over the world](map.png)" in (out / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+
 # Golden help text: argparse metavars, program name and layout are part of the
 # published interface, and nothing else pins them down.
 HELP = {
@@ -260,7 +273,7 @@ options:
   --out PATH  write the profile here instead of stdout
 """,
     "assemble": """\
-usage: wdcgeo assemble [-h] --from DIR --part N --out DIR
+usage: wdcgeo assemble [-h] --from DIR --part N --out DIR [--map NAME]
 
 Gather the parts of a run into one dataset.
 
@@ -269,6 +282,7 @@ options:
   --from DIR  directory holding the part_N directories
   --part N    a part number of the published subset
   --out DIR   directory to write the dataset into
+  --map NAME  image to show in the card, e.g. map.png
 """,
 }
 
