@@ -1,0 +1,65 @@
+[project]
+name = "wdcgeo"
+version = "0.1.0"
+description = "Explore geolocated text in the Web Data Commons schema.org GeoCoordinates subset"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+dependencies = []
+
+[project.scripts]
+wdcgeo = "wdcgeo.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-cov>=6.2",
+    "ruff>=0.16",
+    "ty>=0.0.78",
+    "mutmut>=3.7",
+    "mkdocs-material>=9.7",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.9"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["wdcgeo"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # trailing-comma-missing: formatter's job
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "S101",    # assert: this is a test-heavy repo
+    "CPY001",  # no per-file copyright notices in this repo
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "D", "PLR2004", "INP001", "S", "SLF001"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.mutmut]
+source_paths = ["src/wdcgeo/"]
+pytest_add_cli_args_test_selection = ["tests/"]
