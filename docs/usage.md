@@ -40,35 +40,45 @@ of what was written (`manifest.json`). Records are deduplicated on the way out:
 a coordinate-and-name pair is kept once per host. The profile describes the
 stream *before* deduplication, so the redundancy stays visible.
 
-## Run a sample of the corpus
+## Run the whole corpus
 
-The corpus is roughly 24 core-hours of parsing, so a run takes whole parts
-spread evenly across the 237:
+```bash
+scripts/run_corpus.sh 4 8      # 4 workers, at most 8 parts cached
+```
+
+The subset is 33 GB compressed and a working disk is usually smaller than that,
+so downloads and parsing are interleaved: a downloader keeps at most `CACHE`
+parts on disk, workers take them as they land, and each copy is deleted the
+moment its part is exported. Downloads stay sequential because the mirror
+answers `429` to parallel fetches; parsing gets the cores.
+
+Parts already exported are skipped, so a run can be stopped and resumed, and a
+sample already on disk is reused rather than recomputed. On four cores the full
+237 parts take roughly two and a half hours.
+
+## Run a sample instead
 
 ```bash
 scripts/run_sample.sh 7 4     # every 7th part, 4 workers
 ```
 
-Downloads run one at a time (the mirror answers `429` to parallel fetches) into
-`data/cache/`, each part is deleted once parsed, and every part writes its own
-dataset under `data/parts/part_N/`.
-
-`STRIDE` is the only knob that changes the scope of a run:
+Same mechanics over a stride of the parts, for when a sample is enough:
 
 | stride | parts | share of corpus | rough wall clock at 4 workers |
 | --- | --- | --- | --- |
-| 24 | 10 | 4% | 16 min |
-| 7 | 34 | 14% | 55 min |
-| 3 | 79 | 33% | 2 h |
-| 1 | 237 | 100% | 6 h |
+| 24 | 10 | 4% | 5 min |
+| 7 | 34 | 14% | 20 min |
+| 3 | 79 | 33% | 50 min |
+| 1 | 237 | 100% | 2 h 30 |
 
-The published figures in [Findings](findings.md) come from `STRIDE=7`. Widening
-the run needs no code change: rerun with a smaller stride, then assemble.
+Both write one dataset per part under `data/parts/part_N/`, which
+`wdcgeo assemble` folds into one.
 
 ## Assemble a run into one dataset
 
 ```bash
-uv run wdcgeo assemble --from data/parts $(seq 0 7 236 | sed 's/^/--part /') --out data/dataset
+uv run wdcgeo assemble --from data/parts $(seq 0 236 | sed 's/^/--part /') \
+  --out data/dataset --map map.png
 ```
 
 Renumbers every part's shards into one series, merges the per-part profiles into
@@ -84,6 +94,17 @@ uv run wdcgeo merge data/parts/*/profile.json --out merged.json
 Counts add up; rankings are re-ranked and cut back to the top 25, so a merged
 ranking is exact at the head and can miss an entry that stayed below every
 part's cut.
+
+## Draw the density map
+
+```bash
+uv run python scripts/render_map.py data/dataset/data/*.jsonl.gz --out data/dataset/map.png
+```
+
+Counts every record into quarter-degree cells and draws them on a logarithmic
+scale, one hue light to dark, in an equirectangular projection. Render it before
+assembling and pass `--map map.png` to `wdcgeo assemble`, so the card it writes
+shows the image.
 
 ## Upload to the Hub
 
