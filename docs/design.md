@@ -174,6 +174,10 @@ survive host-local deduplication rather than the pre-dedup input profile. Page
 counts are contiguous page transitions, and word counts cover `name`,
 `description`, and `address`. Input distinct-location counts remain the
 host-local profile sum; they are not a global cross-part deduplication claim.
+The streaming accumulator retains one set entry per distinct host and type or
+language label, so its memory is bounded by those vocabularies rather than by
+the number of records.
 `scripts/render_types.py` turns the complete type counts into the card's
 top-types plot; `scripts/refresh_hub_metadata.py` applies the same card and
-statistics contract to an existing Hub dataset without copying its shards.
+statistics contract to an existing Hub dataset, rendering that plot without
+copying its shards.

@@ -334,7 +334,9 @@ def test_data_directory_reuses_the_directory_and_removes_old_shards(monkeypatch,
     data = tmp_path / "data"
     data.mkdir()
     stale = data / "part-00000.jsonl.gz"
+    unrelated = data / "notes.jsonl.gz"
     stale.touch()
+    unrelated.touch()
     original_glob = Path.glob
     patterns = []
 
@@ -344,8 +346,9 @@ def test_data_directory_reuses_the_directory_and_removes_old_shards(monkeypatch,
 
     monkeypatch.setattr(Path, "glob", remember_glob)
     assert _data_directory(tmp_path) == data
-    assert patterns == ["*.jsonl.gz"]
+    assert patterns == ["part-*.jsonl.gz"]
     assert not stale.exists()
+    assert unrelated.exists()
 
 
 def test_assemble_reads_lowercase_part_data_directories_and_writes_one(tmp_path, monkeypatch):

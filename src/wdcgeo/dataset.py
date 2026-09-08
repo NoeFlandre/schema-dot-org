@@ -170,7 +170,7 @@ def _types_section(types_image: str | None) -> str:
 def _data_directory(directory: Path) -> Path:
     data = directory / "data"
     data.mkdir(parents=True, exist_ok=True)
-    for shard in data.glob("*.jsonl.gz"):
+    for shard in data.glob("part-*.jsonl.gz"):
         shard.unlink()
     return data
 

@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument("--map", dest="map_image", metavar="NAME")
     parser.add_argument("--types", dest="types_image", default=TYPES_NAME, metavar="NAME")
     arguments = parser.parse_args()
+    from scripts.render_types import render  # noqa: PLC0415
 
     stats = dataset_stats(arguments.sources)
     profile = json.loads(arguments.profile.read_text(encoding="utf-8"))
@@ -63,6 +64,7 @@ def main() -> None:
     write_text(arguments.out / STATS_NAME, to_json(stats) + "\n")
     source_count = arguments.source_count or len(arguments.sources)
     published_records = cast("int", stats["records"])
+    render(cast("dict[str, int]", stats["types"]), arguments.out / arguments.types_image)
     write_card(
         arguments.out,
         published_records,
