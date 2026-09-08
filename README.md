@@ -7,9 +7,15 @@ class-specific subset of the
 — 3.18 billion quads, 25.3 million pages, 567,265 hosts, 33 GB gzipped — and
 ships the tools that produced the answer.
 
+The whole subset was read: **51,654,798 geolocated text records over 12,427,530
+distinct places**, from 3,183,190,155 lines, with 22,208 the parser could not
+read.
+
+![Density of every record over the world](docs/map.png)
+
 ```bash
 uv sync
-uv run wdcgeo profile --part 0 --max-lines 2000000   # a minute, no disk used
+uv run wdcgeo profile --part 0 --max-lines 2000000   # 15 seconds, no disk used
 ```
 
 - **[Documentation](docs/index.md)** — what the corpus holds, what the sample
@@ -28,15 +34,17 @@ uv run wdcgeo profile  --part 0                       # JSON profile of a part
 uv run wdcgeo export   --part 0 --out dataset/part_0  # shards + card + profile
 uv run wdcgeo merge    data/parts/*/profile.json      # fold profiles into one
 uv run wdcgeo assemble --from data/parts --part 0 --out data/dataset
-scripts/run_sample.sh 7 4                             # every 7th part, 4 workers
+scripts/run_corpus.sh 4 8                             # all 237 parts, 4 workers
 ```
 
 The interesting part is not the plumbing but what the corpus turns out to be
-like: a `GeoCoordinates` entity is almost always bare, so the text has to be
-found on the parent entity that links to it; property IRIs come in two
-spellings and dropping one loses every Microdata page; and site-wide markup
-repeats one business across every page of its host, so raw record counts
-overstate what is there. [Findings](docs/findings.md) has the numbers.
+like: a `GeoCoordinates` entity is almost always bare, so only 3.3% of records
+get their text from it and the rest comes from the parent entity that links to
+it; property IRIs come in two spellings and dropping one loses every Microdata
+page; and site-wide markup repeats one business across every page of its host,
+so raw record counts overstate the corpus fourfold.
+[Findings](docs/findings.md) has the numbers, and what a 14% sample of the same
+corpus got wrong.
 
 ## Development
 

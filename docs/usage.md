@@ -62,7 +62,7 @@ sample already on disk is reused rather than recomputed. On four cores the full
 scripts/run_sample.sh 7 4     # every 7th part, 4 workers
 ```
 
-Same mechanics over a stride of the parts, for when a sample is enough:
+Same mechanics over a stride of the parts, for when a quick look is enough:
 
 | stride | parts | share of corpus | rough wall clock at 4 workers |
 | --- | --- | --- | --- |
