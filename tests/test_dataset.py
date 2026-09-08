@@ -8,8 +8,10 @@ from wdcgeo.dataset import (
     CARD_NAME,
     MAP_NAME,
     SHARD_SIZE,
+    TYPES_NAME,
     assemble,
     size_category,
+    write_card,
     write_dataset,
 )
 from wdcgeo.extract import GeoText
@@ -115,13 +117,32 @@ def test_card_opens_with_hugging_face_front_matter(tmp_path):
     assert "\n  - split: train\n    path: data/*.jsonl.gz\n" in card
 
 
-def test_card_reports_the_record_count_the_size_band_and_the_parts_read(tmp_path):
+def test_card_reports_the_record_count_the_size_band_and_condensed_provenance(tmp_path):
     write_dataset([BASE] * 1500, tmp_path, SOURCES, shard_size=1000)
     card = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert "1,500 geolocated text records" in card
     assert "size_categories:\n- 1K<n<10K\n" in card
-    for source in SOURCES:
-        assert f"- `{source}`\n" in card
+    assert "## Parts read" not in card
+    assert SOURCES[0] not in card
+    assert "## Dataset statistics" in card
+    assert "| Published records | 1,500 |" in card
+    assert "| Words in name, description, and address | 4,500 |" in card
+
+
+def test_card_renders_optional_input_stats_as_dashes(tmp_path):
+    write_dataset([BASE, SECOND], tmp_path, SOURCES)
+    card = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "| Published records | 2 |" in card
+    assert "| Pages represented | 2 |" in card
+    assert "| Words in name, description, and address | 7 |" in card
+    assert "| Raw records before host-local deduplication | — |" in card
+    assert "| Distinct locations before deduplication | — |" in card
+
+
+def test_card_renders_dashes_for_an_incomplete_stats_section(tmp_path):
+    write_card(tmp_path, 0, [], stats={"text": None})
+    card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
+    assert "| Words in name, description, and address | — |" in card
 
 
 def test_card_documents_every_field_of_a_record(tmp_path):
@@ -159,9 +180,17 @@ def part_directory(root, name, records, profile):
 
 
 def test_assemble_gathers_shards_profiles_and_one_card(tmp_path):
-    first = part_directory(tmp_path, "part_0", [BASE], {"records": 3, "hosts": 1})
+    first = part_directory(
+        tmp_path,
+        "part_0",
+        [BASE],
+        {"records": 3, "hosts": 1, "duplication": {"distinct_places": 2}},
+    )
     second = part_directory(
-        tmp_path, "part_7", [BASE, replace(BASE, name="Two")], {"records": 5, "hosts": 2}
+        tmp_path,
+        "part_7",
+        [BASE, replace(BASE, name="Two")],
+        {"records": 5, "hosts": 2, "duplication": {"distinct_places": 4}},
     )
     out = tmp_path / "dataset"
 
@@ -172,20 +201,32 @@ def test_assemble_gathers_shards_profiles_and_one_card(tmp_path):
         "records": 3,
         "shards": ["part-00000.jsonl.gz", "part-00001.jsonl.gz"],
         "card": "README.md",
+        "stats": "stats.json",
     }
     assert [len(read_shard(out, name)) for name in manifest["shards"]] == [1, 2]
     assert json.loads((out / "profile.json").read_text(encoding="utf-8")) == {
         "records": 8,
         "hosts": 3,
+        "duplication": {"distinct_places": 6},
     }
+    stats = json.loads((out / "stats.json").read_text(encoding="utf-8"))
+    assert stats["records"] == 3
+    assert stats["input"] == {"records": 8, "distinct_places": 6}
     card = (out / "README.md").read_text(encoding="utf-8")
     assert "3 geolocated text records" in card
-    assert f"- `{SOURCES[0]}`\n" in card
+    assert "| Raw records before host-local deduplication | 8 |" in card
+    assert "| Distinct locations before deduplication | 6 |" in card
 
 
 def test_assemble_needs_no_parts_at_all(tmp_path):
     out = tmp_path / "dataset"
-    assert assemble([], [], out) == {"parts": 0, "records": 0, "shards": [], "card": "README.md"}
+    assert assemble([], [], out) == {
+        "parts": 0,
+        "records": 0,
+        "shards": [],
+        "card": "README.md",
+        "stats": "stats.json",
+    }
     assert json.loads((out / "profile.json").read_text(encoding="utf-8")) == {}
 
 
@@ -207,15 +248,16 @@ def test_card_has_no_map_section_by_default(tmp_path):
     write_dataset([BASE], tmp_path, SOURCES)
     card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
     assert "Where the records are" not in card
-    # Nothing at all stands where the section would go.
-    assert "\n\n## Parts read" in card
+    assert "Type distribution" not in card
 
 
 def test_card_shows_the_map_when_one_is_named(tmp_path):
-    part = part_directory(tmp_path, "part_0", [BASE], {"records": 1})
+    part = part_directory(tmp_path, "part_0", [BASE], {"records": 1, "duplication": {}})
     out = tmp_path / "dataset"
-    assemble([part], SOURCES, out, MAP_NAME)
+    assemble([part], SOURCES, out, MAP_NAME, TYPES_NAME)
     card = (out / CARD_NAME).read_text(encoding="utf-8")
     assert "## Where the records are" in card
     assert f"![Density of the records over the world]({MAP_NAME})" in card
-    assert card.index("Where the records are") < card.index("## Parts read")
+    assert "## Type distribution" in card
+    assert f"![Distribution of schema.org types]({TYPES_NAME})" in card
+    assert card.index("Where the records are") < card.index("Type distribution")

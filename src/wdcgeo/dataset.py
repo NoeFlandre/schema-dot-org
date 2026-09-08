@@ -11,6 +11,7 @@ from __future__ import annotations
 import gzip
 import json
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import asdict
 from itertools import chain, islice
 from pathlib import Path
@@ -33,10 +34,12 @@ PROFILE_NAME = "profile.json"
 MANIFEST_NAME = "manifest.json"
 STATS_NAME = "stats.json"
 MAP_NAME = "map.png"
+TYPES_NAME = "types.png"
 
 _SHARD_MODE = "wt"
 _CARD_TEMPLATE = "card.md"
 _MAP_TEMPLATE = "map.md"
+_TYPES_TEMPLATE = "types.md"
 
 _SIZE_BANDS = (
     (1_000, "n<1K"),
@@ -150,19 +153,60 @@ def _map_section(map_image: str | None) -> str:
     return _template(_MAP_TEMPLATE).format(map_image=map_image)
 
 
+def _types_section(types_image: str | None) -> str:
+    if types_image is None:
+        return ""
+    return _template(_TYPES_TEMPLATE).format(types_image=types_image)
+
+
+def _number(value: object) -> str:
+    return f"{value:,}" if isinstance(value, int) else "—"
+
+
+def _nested_number(stats: Mapping[str, Any], section: str, name: str) -> str:
+    values = stats.get(section)
+    if not isinstance(values, Mapping):
+        return "—"
+    return _number(values.get(name))
+
+
+def _card_stats(records: int, stats: Mapping[str, Any] | None) -> dict[str, str]:
+    values = {} if stats is None else stats
+    types = values.get("types")
+    type_labels = len(types) if isinstance(types, Mapping) else None
+    input_stats = values.get("input")
+    input_values = input_stats if isinstance(input_stats, Mapping) else {}
+    return {
+        "published_records": _number(values.get("records", records)),
+        "pages": _number(values.get("pages")),
+        "hosts": _number(values.get("hosts")),
+        "text_records": _nested_number(values, "text", "records"),
+        "words": _nested_number(values, "text", "words"),
+        "characters": _nested_number(values, "text", "characters"),
+        "records_with_type": _number(values.get("records_with_type")),
+        "type_labels": _number(type_labels),
+        "raw_records": _number(input_values.get("records")),
+        "distinct_places": _number(input_values.get("distinct_places")),
+    }
+
+
 def write_card(
     directory: Path,
     records: int,
     sources: Sequence[str],
     map_image: str | None = None,
+    types_image: str | None = None,
+    stats: Mapping[str, Any] | None = None,
 ) -> None:
-    """Write the dataset card for ``records`` records read from ``sources``."""
+    """Write the dataset card for a published dataset and its source count."""
     template = _template(_CARD_TEMPLATE)
     card = template.format(
         records=f"{records:,}",
         size_category=size_category(records),
-        sources="\n".join(f"- `{source}`" for source in sources),
+        source_count=f"{len(sources):,}",
         map_section=_map_section(map_image),
+        types_section=_types_section(types_image),
+        **_card_stats(records, stats),
     )
     write_text(directory / CARD_NAME, card)
 
@@ -194,8 +238,9 @@ def write_dataset(
                 written += 1
                 stats.add(record)
         shards.append(name)
-    write_text(directory / STATS_NAME, to_json(stats.to_dict()) + "\n")
-    write_card(directory, written, sources)
+    report = stats.to_dict()
+    write_text(directory / STATS_NAME, to_json(report) + "\n")
+    write_card(directory, written, sources, stats=report)
     return {"records": written, "shards": shards, "card": CARD_NAME, "stats": STATS_NAME}
 
 
@@ -204,6 +249,7 @@ def assemble(
     sources: Sequence[str],
     directory: Path,
     map_image: str | None = None,
+    types_image: str | None = None,
 ) -> dict[str, Any]:
     """Gather the datasets and profiles of separate parts into one dataset.
 
@@ -215,17 +261,60 @@ def assemble(
     data = directory / "data"
     data.mkdir(parents=True, exist_ok=True)
     shards: list[str] = []
-    records = 0
+    shard_paths: list[Path] = []
     reports: list[dict[str, Any]] = []
     for part in parts:
         for shard in sorted((part / "data").glob("*.jsonl.gz")):
-            shards.append(f"part-{len(shards):05d}.jsonl.gz")
-            copyfile(shard, data / shards[-1])
+            name = f"part-{len(shards):05d}.jsonl.gz"
+            shards.append(name)
+            target = data / name
+            copyfile(shard, target)
+            shard_paths.append(target)
         reports.append(read_json(part / PROFILE_NAME))
-        records += read_json(part / MANIFEST_NAME)["records"]
-    write_text(directory / PROFILE_NAME, to_json(merge(reports)) + "\n")
-    write_card(directory, records, sources, map_image)
-    return {"parts": len(parts), "records": records, "shards": shards, "card": CARD_NAME}
+    profile = merge(reports)
+    write_text(directory / PROFILE_NAME, to_json(profile) + "\n")
+    stats = _stats_from_shards(shard_paths)
+    input_stats = _input_stats(profile)
+    if input_stats:
+        stats["input"] = input_stats
+    write_text(directory / STATS_NAME, to_json(stats) + "\n")
+    write_card(directory, stats["records"], sources, map_image, types_image, stats)
+    return {
+        "parts": len(parts),
+        "records": stats["records"],
+        "shards": shards,
+        "card": CARD_NAME,
+        "stats": STATS_NAME,
+    }
+
+
+def _records_from_shards(paths: Sequence[Path]) -> Iterator[GeoText]:
+    from wdcgeo.extract import GeoText
+
+    for path in paths:
+        with gzip.open(path, "rt", encoding=ENCODING) as handle:
+            for line in handle:
+                yield GeoText(**json.loads(line))
+
+
+def _stats_from_shards(paths: Sequence[Path]) -> dict[str, Any]:
+    stats = DatasetStats()
+    for record in _records_from_shards(paths):
+        stats.add(record)
+    return stats.to_dict()
+
+
+def _input_stats(profile: Mapping[str, Any]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    records = profile.get("records")
+    if isinstance(records, int):
+        result["records"] = records
+    duplication = profile.get("duplication")
+    if isinstance(duplication, Mapping):
+        distinct_places = duplication.get("distinct_places")
+        if isinstance(distinct_places, int):
+            result["distinct_places"] = distinct_places
+    return result
 
 
 def read_json(path: Path) -> dict[str, Any]:

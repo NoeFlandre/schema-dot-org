@@ -31,9 +31,22 @@ because site-wide markup republishes one business on every page of its site.
 Coordinates are kept exactly as published, including 0/0 and whole-degree
 values, so that quality filtering stays the consumer's decision.
 
-{map_section}## Parts read
+## Dataset statistics
 
-{sources}
+| statistic | value |
+| --- | ---: |
+| Published records | {published_records} |
+| Pages represented | {pages} |
+| Hosts represented | {hosts} |
+| Records with text | {text_records} |
+| Words in name, description, and address | {words} |
+| Characters in name, description, and address | {characters} |
+| Records with a schema.org type | {records_with_type} |
+| Distinct schema.org type labels | {type_labels} |
+| Raw records before host-local deduplication | {raw_records} |
+| Distinct locations before deduplication | {distinct_places} |
+
+{map_section}{types_section}
 
 ## Fields
 
@@ -55,5 +68,7 @@ values, so that quality filtering stays the consumer's decision.
 Extracted with [wdcgeo](https://github.com/NoeFlandre/schema-dot-org). The
 markup is published by the crawled sites and collected by the Web Data Commons
 project, which distributes the extraction under the terms stated on
-<https://webdatacommons.org/structureddata/>. `profile.json` in this repository
-reports the aggregate statistics of the records before deduplication.
+<https://webdatacommons.org/structureddata/>. The input was read from
+{source_count} source parts of the release 2024-12. `profile.json` reports
+aggregate statistics before deduplication; `stats.json` describes the published
+records after deduplication.
