@@ -11,3 +11,4 @@ mutants/
 mutants.sqlite
 data/
 coverage.json
+.worktrees/
