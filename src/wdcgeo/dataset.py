@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import json
+from collections import Counter
 from dataclasses import asdict
 from itertools import chain, islice
 from pathlib import Path
@@ -30,6 +31,7 @@ SHARD_SIZE = 250_000
 CARD_NAME = "README.md"
 PROFILE_NAME = "profile.json"
 MANIFEST_NAME = "manifest.json"
+STATS_NAME = "stats.json"
 MAP_NAME = "map.png"
 
 _SHARD_MODE = "wt"
@@ -45,6 +47,7 @@ _SIZE_BANDS = (
     (100_000_000, "10M<n<100M"),
 )
 _LARGEST_BAND = "100M<n<1B"
+_TEXT_FIELDS = ("name", "description", "address")
 
 
 def to_json(value: object) -> str:
@@ -54,6 +57,79 @@ def to_json(value: object) -> str:
 
 def _json_line(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)  # pragma: no mutate
+
+
+class DatasetStats:
+    """Aggregate statistics for the records written to the published shards."""
+
+    def __init__(self) -> None:
+        """Start all counters empty."""
+        self.records = 0
+        self.pages = 0
+        self.hosts: set[str] = set()
+        self.text_records = 0
+        self.words = 0
+        self.characters = 0
+        self.records_with_type = 0
+        self.types: Counter[str] = Counter()
+        self.languages: Counter[str] = Counter()
+        self.null_island = 0
+        self.whole_degrees = 0
+        self._previous_page: str | None = None
+
+    def add(self, record: GeoText) -> None:
+        """Fold one published record into the counters."""
+        self.records += 1
+        self._add_page(record.page_url)
+        self.hosts.add(record.host)
+        self._add_text(record)
+        self._add_types(record)
+        self.languages.update(record.languages)
+        self._add_coordinates(record)
+
+    def _add_page(self, page_url: str) -> None:
+        if page_url != self._previous_page:
+            self.pages += 1
+        self._previous_page = page_url
+
+    def _add_text(self, record: GeoText) -> None:
+        values = [getattr(record, field) for field in _TEXT_FIELDS]
+        present = [value for value in values if value is not None]
+        self.text_records += bool(present)
+        self.words += sum(len(value.split()) for value in present)
+        self.characters += sum(map(len, present))
+
+    def _add_types(self, record: GeoText) -> None:
+        self.records_with_type += bool(record.types)
+        self.types.update(record.types)
+
+    def _add_coordinates(self, record: GeoText) -> None:
+        self.null_island += record.latitude == 0.0 and record.longitude == 0.0
+        self.whole_degrees += record.latitude.is_integer() and record.longitude.is_integer()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Render the counters as deterministic JSON-ready data."""
+        return {
+            "records": self.records,
+            "pages": self.pages,
+            "hosts": len(self.hosts),
+            "text": {
+                "records": self.text_records,
+                "words": self.words,
+                "characters": self.characters,
+            },
+            "records_with_type": self.records_with_type,
+            "types": _ranked(self.types),
+            "languages": _ranked(self.languages),
+            "coordinates": {
+                "null_island": self.null_island,
+                "whole_degrees": self.whole_degrees,
+            },
+        }
+
+
+def _ranked(counts: Counter[str]) -> dict[str, int]:
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def size_category(count: int) -> str:
@@ -109,15 +185,18 @@ def write_dataset(
     data.mkdir(parents=True, exist_ok=True)
     shards: list[str] = []
     written = 0
+    stats = DatasetStats()
     for chunk in _chunked(iter(records), shard_size):
         name = f"part-{len(shards):05d}.jsonl.gz"
         with gzip.open(data / name, _SHARD_MODE, encoding=ENCODING) as handle:  # pragma: no mutate
             for record in chunk:
                 handle.write(_json_line(asdict(record)) + "\n")
                 written += 1
+                stats.add(record)
         shards.append(name)
+    write_text(directory / STATS_NAME, to_json(stats.to_dict()) + "\n")
     write_card(directory, written, sources)
-    return {"records": written, "shards": shards, "card": CARD_NAME}
+    return {"records": written, "shards": shards, "card": CARD_NAME, "stats": STATS_NAME}
 
 
 def assemble(

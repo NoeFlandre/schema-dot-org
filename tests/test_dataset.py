@@ -28,10 +28,38 @@ BASE = GeoText(
 )
 SOURCES = ["http://mirror.example.com/geo/part_0.gz", "http://mirror.example.com/geo/part_8.gz"]
 
+SECOND = replace(
+    BASE,
+    page_url="http://other.example/p/2",
+    host="other.example",
+    latitude=0.0,
+    longitude=0.0,
+    types=("Restaurant", "CafeOrCoffeeShop"),
+    name="Two words",
+    description="three four",
+    address=None,
+    languages=("en", "fr"),
+)
+
 
 def read_shard(directory, name):
     with gzip.open(directory / "data" / name, "rt", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle]
+
+
+def test_writes_post_dedup_stats_from_records(tmp_path):
+    manifest = write_dataset([BASE, SECOND], tmp_path, SOURCES)
+    assert manifest["stats"] == "stats.json"
+    assert json.loads((tmp_path / "stats.json").read_text(encoding="utf-8")) == {
+        "records": 2,
+        "pages": 2,
+        "hosts": 2,
+        "text": {"records": 2, "words": 7, "characters": 33},
+        "records_with_type": 2,
+        "types": {"Restaurant": 2, "CafeOrCoffeeShop": 1},
+        "languages": {"fr": 2, "en": 1},
+        "coordinates": {"null_island": 1, "whole_degrees": 1},
+    }
 
 
 def test_writes_one_json_object_per_record(tmp_path):
@@ -76,7 +104,7 @@ def test_default_shard_size_is_a_quarter_million_records():
 
 def test_writes_a_card_but_no_shards_for_an_empty_stream(tmp_path):
     manifest = write_dataset([], tmp_path, SOURCES)
-    assert manifest == {"records": 0, "shards": [], "card": "README.md"}
+    assert manifest == {"records": 0, "shards": [], "card": "README.md", "stats": "stats.json"}
     assert (tmp_path / "README.md").exists()
 
 
