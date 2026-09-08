@@ -111,7 +111,10 @@ def _over_a_corpus(arguments: argparse.Namespace, parser: argparse.ArgumentParse
 def _assemble(arguments: argparse.Namespace) -> int:
     directories = [arguments.parts / f"part_{part}" for part in arguments.part]
     sources = [part_url(part) for part in arguments.part]
-    _report(assemble(directories, sources, arguments.out, arguments.map_image, arguments.types_image), None)
+    _report(
+        assemble(directories, sources, arguments.out, arguments.map_image, arguments.types_image),
+        None,
+    )
     return 0
 
 
