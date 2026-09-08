@@ -9,7 +9,6 @@ import pytest
 
 import wdcgeo
 from wdcgeo import cli
-from wdcgeo.corpus import part_url
 
 PAGE = "http://example.com/p/1"
 S = "http://schema.org/"
@@ -69,12 +68,14 @@ def test_export_profiles_before_deduplicating(tmp_path, capsys):
     assert manifest["records"] == 1
 
 
-def test_export_records_which_parts_it_read_in_the_card(tmp_path, capsys):
+def test_export_condenses_the_source_count_in_the_card(tmp_path, capsys):
     assert (
         cli.main(["export", "--part", "7", "--out", str(tmp_path / "d"), "--max-lines", "0"]) == 0
     )
     capsys.readouterr()
-    assert f"- `{part_url(7)}`" in (tmp_path / "d" / "README.md").read_text(encoding="utf-8")
+    card = (tmp_path / "d" / "README.md").read_text(encoding="utf-8")
+    assert "1 source parts" in card
+    assert "## Parts read" not in card
 
 
 def test_part_numbers_are_resolved_to_published_urls(capsys):
@@ -155,15 +156,15 @@ def test_assemble_builds_one_dataset_from_the_parts_of_a_run(tmp_path, capsys):
     assert sorted(path.name for path in (dataset / "data").iterdir()) == manifest["shards"]
     assert json.loads((dataset / "profile.json").read_text(encoding="utf-8"))["records"] == 2
     card = (dataset / "README.md").read_text(encoding="utf-8")
-    assert f"- `{part_url(0)}`" in card
-    assert f"- `{part_url(7)}`" in card
+    assert "2 source parts" in card
+    assert "## Parts read" not in card
 
 
 def test_part_numbers_are_read_as_numbers_not_as_text(tmp_path, capsys):
     out = tmp_path / "d"
     assert cli.main(["export", "--part", "007", "--max-lines", "0", "--out", str(out)]) == 0
     capsys.readouterr()
-    assert f"- `{part_url(7)}`" in (out / "README.md").read_text(encoding="utf-8")
+    assert "1 source parts" in (out / "README.md").read_text(encoding="utf-8")
 
 
 def test_assemble_reads_part_numbers_as_numbers(tmp_path, capsys):
@@ -183,7 +184,8 @@ def test_json_output_is_indented_for_a_human_to_read(tmp_path, capsys):
         '  "shards": [\n'
         '    "part-00000.jsonl.gz"\n'
         "  ],\n"
-        '  "card": "README.md"\n'
+        '  "card": "README.md",\n'
+        '  "stats": "stats.json"\n'
         "}\n"
     )
 
@@ -205,10 +207,25 @@ def test_assemble_shows_the_map_in_the_card_when_asked(tmp_path, capsys):
     assert cli.main(["export", source(tmp_path, "a.gz"), "--out", str(parts / "part_0")]) == 0
     capsys.readouterr()
     out = tmp_path / "d"
-    argv = ["assemble", "--from", str(parts), "--part", "0", "--out", str(out), "--map", "map.png"]
+    argv = [
+        "assemble",
+        "--from",
+        str(parts),
+        "--part",
+        "0",
+        "--out",
+        str(out),
+        "--map",
+        "map.png",
+        "--types",
+        "types.png",
+    ]
     assert cli.main(argv) == 0
     capsys.readouterr()
     assert "![Density of the records over the world](map.png)" in (out / "README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "![Distribution of schema.org types](types.png)" in (out / "README.md").read_text(
         encoding="utf-8"
     )
 
@@ -274,15 +291,17 @@ options:
 """,
     "assemble": """\
 usage: wdcgeo assemble [-h] --from DIR --part N --out DIR [--map NAME]
+                       [--types NAME]
 
 Gather the parts of a run into one dataset.
 
 options:
-  -h, --help  show this help message and exit
-  --from DIR  directory holding the part_N directories
-  --part N    a part number of the published subset
-  --out DIR   directory to write the dataset into
-  --map NAME  image to show in the card, e.g. map.png
+  -h, --help    show this help message and exit
+  --from DIR    directory holding the part_N directories
+  --part N      a part number of the published subset
+  --out DIR     directory to write the dataset into
+  --map NAME    image to show in the card, e.g. map.png
+  --types NAME  type distribution image to show in the card, e.g. types.png
 """,
 }
 
