@@ -167,6 +167,14 @@ def _types_section(types_image: str | None) -> str:
     return _template(_TYPES_TEMPLATE).format(types_image=types_image)
 
 
+def _data_directory(directory: Path) -> Path:
+    data = directory / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    for shard in data.glob("*.jsonl.gz"):
+        shard.unlink()
+    return data
+
+
 def _number(value: object) -> str:
     return f"{value:,}" if isinstance(value, int) else "—"
 
@@ -232,8 +240,7 @@ def write_dataset(
     shard_size: int = SHARD_SIZE,
 ) -> dict[str, Any]:
     """Write ``records`` and a dataset card into ``directory``, returning a manifest."""
-    data = directory / "data"
-    data.mkdir(parents=True, exist_ok=True)
+    data = _data_directory(directory)
     shards: list[str] = []
     written = 0
     stats = DatasetStats()
@@ -265,8 +272,7 @@ def assemble(
     profiles, and writes a single card naming the published parts rather than
     the local copies a run happened to read.
     """
-    data = directory / "data"
-    data.mkdir(parents=True, exist_ok=True)
+    data = _data_directory(directory)
     shards: list[str] = []
     shard_paths: list[Path] = []
     reports: list[dict[str, Any]] = []

@@ -26,25 +26,25 @@ GeoCoordinates subset of the Web Data Commons schema.org data set series
 (release 2024-12). Each record pairs one coordinate pair published on a web page
 with the text published next to it on that same page.
 
-Records are deduplicated: a coordinate-and-name pair is kept once per host,
-because site-wide markup republishes one business on every page of its site.
-Coordinates are kept exactly as published, including 0/0 and whole-degree
-values, so that quality filtering stays the consumer's decision.
+Each source stream is deduplicated by host-local runs: a coordinate-and-name
+pair is kept once per contiguous host run. A host returning in a later part may
+contribute another copy. Coordinates are kept exactly as published, including
+0/0 and whole-degree values, so quality filtering stays the consumer's choice.
 
 ## Dataset statistics
 
 | statistic | value |
 | --- | ---: |
 | Published records | {published_records} |
-| Pages represented | {pages} |
+| Contiguous page runs represented | {pages} |
 | Hosts represented | {hosts} |
 | Records with text | {text_records} |
 | Words in name, description, and address | {words} |
 | Characters in name, description, and address | {characters} |
 | Records with a schema.org type | {records_with_type} |
 | Distinct schema.org type labels | {type_labels} |
-| Raw records before host-local deduplication | {raw_records} |
-| Distinct locations before deduplication | {distinct_places} |
+| Input records before host-local deduplication | {raw_records} |
+| Input distinct host-local locations | {distinct_places} |
 
 {map_section}{types_section}
 
@@ -69,6 +69,6 @@ Extracted with [wdcgeo](https://github.com/NoeFlandre/schema-dot-org). The
 markup is published by the crawled sites and collected by the Web Data Commons
 project, which distributes the extraction under the terms stated on
 <https://webdatacommons.org/structureddata/>. The input was read from
-{source_count} source parts of the release 2024-12. `profile.json` reports
-aggregate statistics before deduplication; `stats.json` describes the published
-records after deduplication.
+{source_count} source part(s). `profile.json` reports aggregate statistics
+before deduplication; `stats.json` describes the published records after
+deduplication.

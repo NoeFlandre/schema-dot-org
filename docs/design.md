@@ -68,7 +68,7 @@ functions have names worth reading, which is the point of the ceiling.
 
 `mutmut` rewrites the source one edit at a time and reruns the suite. A mutant
 that survives is a behaviour no test pins down. The gate here is **zero
-survivors** over `src/wdcgeo/`: of 1,148 mutants, 1,145 are killed by a failing
+survivors** over `src/wdcgeo/`: of 1,526 mutants, 1,523 are killed by a failing
 assertion and 3 by timeout.
 
 It earned its keep by changing the design, not just by adding tests:
@@ -159,7 +159,7 @@ Things deliberately not built, and why:
 
 ## Scripts are not library code
 
-`scripts/` holds seven runnable things — `run_corpus.sh` and `run_sample.sh`,
+`scripts/` holds eight runnable things — `run_corpus.sh` and `run_sample.sh`,
 which orchestrate a full and a sampled run; `domain_stats.py`, which summarises
 a side file; `quality_scan.py`, which counts defects in exported records; and
 `render_map.py`, which draws the density map with matplotlib. They are
@@ -172,7 +172,8 @@ The published dataset has two additional metadata artifacts. `stats.json` is
 computed by streaming the final JSONL shards, so it describes the records that
 survive host-local deduplication rather than the pre-dedup input profile. Page
 counts are contiguous page transitions, and word counts cover `name`,
-`description`, and `address`. `scripts/render_types.py` turns the complete type
-counts into the card's top-types plot; `scripts/refresh_hub_metadata.py` applies
-the same card and statistics contract to an existing Hub dataset without
-copying its shards.
+`description`, and `address`. Input distinct-location counts remain the
+host-local profile sum; they are not a global cross-part deduplication claim.
+`scripts/render_types.py` turns the complete type counts into the card's
+top-types plot; `scripts/refresh_hub_metadata.py` applies the same card and
+statistics contract to an existing Hub dataset without copying its shards.

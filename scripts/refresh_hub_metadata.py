@@ -6,10 +6,11 @@ import argparse
 import json
 from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import cast
 
 from wdcgeo import write_text
 from wdcgeo.corpus import stream_lines
-from wdcgeo.dataset import CardOptions, STATS_NAME, TYPES_NAME, DatasetStats, to_json, write_card
+from wdcgeo.dataset import STATS_NAME, TYPES_NAME, CardOptions, DatasetStats, to_json, write_card
 from wdcgeo.extract import GeoText
 
 
@@ -61,9 +62,10 @@ def main() -> None:
     arguments.out.mkdir(parents=True, exist_ok=True)
     write_text(arguments.out / STATS_NAME, to_json(stats) + "\n")
     source_count = arguments.source_count or len(arguments.sources)
+    published_records = cast("int", stats["records"])
     write_card(
         arguments.out,
-        stats["records"],
+        published_records,
         [str(index) for index in range(source_count)],
         CardOptions(
             map_image=arguments.map_image,

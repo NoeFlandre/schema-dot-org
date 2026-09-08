@@ -1,6 +1,7 @@
 import gzip
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,8 @@ from wdcgeo.dataset import (
     SHARD_SIZE,
     TYPES_NAME,
     CardOptions,
+    DatasetStats,
+    _data_directory,
     assemble,
     size_category,
     write_card,
@@ -63,6 +66,35 @@ def test_writes_post_dedup_stats_from_records(tmp_path):
         "languages": {"fr": 2, "en": 1},
         "coordinates": {"null_island": 1, "whole_degrees": 1},
     }
+    assert list(json.loads((tmp_path / "stats.json").read_text(encoding="utf-8"))["types"]) == [
+        "Restaurant",
+        "CafeOrCoffeeShop",
+    ]
+
+
+def test_stats_count_first_empty_page_and_contiguous_runs():
+    stats = DatasetStats()
+    stats.add(replace(BASE, page_url=""))
+    stats.add(SECOND)
+    stats.add(SECOND)
+    assert stats.to_dict()["pages"] == 2
+
+
+def test_stats_count_coordinate_properties_for_each_record():
+    stats = DatasetStats()
+    stats.add(replace(BASE, latitude=0.0, longitude=2.5))
+    stats.add(SECOND)
+    stats.add(SECOND)
+    assert stats.to_dict()["coordinates"] == {"null_island": 2, "whole_degrees": 2}
+
+
+def test_stats_break_equal_count_ties_by_label(tmp_path):
+    alpha = replace(BASE, types=("Alpha",), languages=("a",))
+    zoo = replace(BASE, types=("Zoo",), languages=("z",))
+    write_dataset([zoo, alpha], tmp_path, SOURCES)
+    stats = json.loads((tmp_path / "stats.json").read_text(encoding="utf-8"))
+    assert list(stats["types"]) == ["Alpha", "Zoo"]
+    assert list(stats["languages"]) == ["a", "z"]
 
 
 def test_writes_one_json_object_per_record(tmp_path):
@@ -134,16 +166,34 @@ def test_card_renders_optional_input_stats_as_dashes(tmp_path):
     write_dataset([BASE, SECOND], tmp_path, SOURCES)
     card = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert "| Published records | 2 |" in card
-    assert "| Pages represented | 2 |" in card
+    assert "| Contiguous page runs represented | 2 |" in card
+    assert "| Hosts represented | 2 |" in card
+    assert "| Records with text | 2 |" in card
     assert "| Words in name, description, and address | 7 |" in card
-    assert "| Raw records before host-local deduplication | — |" in card
-    assert "| Distinct locations before deduplication | — |" in card
+    assert "| Characters in name, description, and address | 33 |" in card
+    assert "| Records with a schema.org type | 2 |" in card
+    assert "| Distinct schema.org type labels | 2 |" in card
+    assert "| Input records before host-local deduplication | — |" in card
+    assert "| Input distinct host-local locations | — |" in card
 
 
 def test_card_renders_dashes_for_an_incomplete_stats_section(tmp_path):
     write_card(tmp_path, 0, [], CardOptions(stats={"text": None}))
     card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
+    assert "| Published records | 0 |" in card
     assert "| Words in name, description, and address | — |" in card
+
+
+def test_card_uses_stats_records_when_present(tmp_path):
+    write_card(tmp_path, 7, [], CardOptions(stats={"records": 8}))
+    card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
+    assert "| Published records | 8 |" in card
+
+
+def test_card_falls_back_to_written_records_when_stats_omit_records(tmp_path):
+    write_card(tmp_path, 7, [], CardOptions(stats={"text": {}}))
+    card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
+    assert "| Published records | 7 |" in card
 
 
 def test_card_documents_every_field_of_a_record(tmp_path):
@@ -215,8 +265,8 @@ def test_assemble_gathers_shards_profiles_and_one_card(tmp_path):
     assert stats["input"] == {"records": 8, "distinct_places": 6}
     card = (out / "README.md").read_text(encoding="utf-8")
     assert "3 geolocated text records" in card
-    assert "| Raw records before host-local deduplication | 8 |" in card
-    assert "| Distinct locations before deduplication | 6 |" in card
+    assert "| Input records before host-local deduplication | 8 |" in card
+    assert "| Input distinct host-local locations | 6 |" in card
 
 
 def test_assemble_needs_no_parts_at_all(tmp_path):
@@ -232,10 +282,11 @@ def test_assemble_needs_no_parts_at_all(tmp_path):
 
 
 def test_writes_into_a_directory_that_already_holds_a_dataset(tmp_path):
-    write_dataset([BASE], tmp_path, SOURCES)
+    write_dataset([BASE, SECOND], tmp_path, SOURCES, shard_size=1)
     manifest = write_dataset([BASE, replace(BASE, name="Two")], tmp_path, SOURCES)
     assert manifest["records"] == 2
     assert len(read_shard(tmp_path, "part-00000.jsonl.gz")) == 2
+    assert not (tmp_path / "data" / "part-00001.jsonl.gz").exists()
 
 
 def test_assembles_into_a_directory_that_already_holds_a_dataset(tmp_path):
@@ -250,6 +301,7 @@ def test_card_has_no_map_section_by_default(tmp_path):
     card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
     assert "Where the records are" not in card
     assert "Type distribution" not in card
+    assert "XXXX" not in card
 
 
 def test_card_shows_the_map_when_one_is_named(tmp_path):
@@ -262,3 +314,74 @@ def test_card_shows_the_map_when_one_is_named(tmp_path):
     assert "## Type distribution" in card
     assert f"![Distribution of schema.org types]({TYPES_NAME})" in card
     assert card.index("Where the records are") < card.index("Type distribution")
+
+
+def test_write_dataset_uses_the_lowercase_hub_data_directory(monkeypatch, tmp_path):
+    original_mkdir = Path.mkdir
+    created = []
+
+    def remember(path, *args, **kwargs):
+        created.append(path.name)
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", remember)
+    write_dataset([], tmp_path, SOURCES)
+    assert created[-1] == "data"
+    assert "DATA" not in created
+
+
+def test_data_directory_reuses_the_directory_and_removes_old_shards(monkeypatch, tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    stale = data / "part-00000.jsonl.gz"
+    stale.touch()
+    original_glob = Path.glob
+    patterns = []
+
+    def remember_glob(path, pattern):
+        patterns.append(pattern)
+        return original_glob(path, pattern)
+
+    monkeypatch.setattr(Path, "glob", remember_glob)
+    assert _data_directory(tmp_path) == data
+    assert patterns == ["*.jsonl.gz"]
+    assert not stale.exists()
+
+
+def test_assemble_reads_lowercase_part_data_directories_and_writes_one(tmp_path, monkeypatch):
+    part = part_directory(tmp_path, "part_0", [BASE], {"records": 1})
+    output = tmp_path / "dataset"
+    original_mkdir = Path.mkdir
+    original_glob = Path.glob
+    created = []
+    searched = []
+
+    def remember_mkdir(path, *args, **kwargs):
+        created.append(path.name)
+        return original_mkdir(path, *args, **kwargs)
+
+    def remember_glob(path, pattern):
+        if path == part / "data":
+            searched.append((path.name, pattern))
+        return original_glob(path, pattern)
+
+    monkeypatch.setattr(Path, "mkdir", remember_mkdir)
+    monkeypatch.setattr(Path, "glob", remember_glob)
+    assemble([part], SOURCES, output)
+    assert created[-1] == "data"
+    assert "DATA" not in created
+    assert searched == [("data", "*.jsonl.gz")]
+
+
+def test_assemble_reads_shards_as_utf8(tmp_path, monkeypatch):
+    part = part_directory(tmp_path, "part_0", [replace(BASE, name="Café")], {"records": 1})
+    opened = []
+    original_open = gzip.open
+
+    def remember_encoding(*args, **kwargs):
+        opened.append(kwargs.get("encoding"))
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr("wdcgeo.dataset.gzip.open", remember_encoding)
+    assemble([part], SOURCES, tmp_path / "dataset")
+    assert opened == ["utf-8"]

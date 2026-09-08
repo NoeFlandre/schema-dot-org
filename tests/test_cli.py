@@ -66,6 +66,9 @@ def test_export_profiles_before_deduplicating(tmp_path, capsys):
     profile = json.loads((tmp_path / "d" / "profile.json").read_text(encoding="utf-8"))
     assert (profile["records"], profile["duplication"]["distinct_places"]) == (2, 1)
     assert manifest["records"] == 1
+    stats = json.loads((tmp_path / "d" / "stats.json").read_text(encoding="utf-8"))
+    assert stats["records"] == 1
+    assert "| Published records | 1 |" in (tmp_path / "d" / "README.md").read_text(encoding="utf-8")
 
 
 def test_export_condenses_the_source_count_in_the_card(tmp_path, capsys):
@@ -74,13 +77,26 @@ def test_export_condenses_the_source_count_in_the_card(tmp_path, capsys):
     )
     capsys.readouterr()
     card = (tmp_path / "d" / "README.md").read_text(encoding="utf-8")
-    assert "1 source parts" in card
+    assert "1 source part(s)" in card
     assert "## Parts read" not in card
 
 
 def test_part_numbers_are_resolved_to_published_urls(capsys):
     assert cli.main(["profile", "--part", "3", "--max-lines", "0"]) == 0
     assert json.loads(capsys.readouterr().out)["input"]["locations"] == 1
+
+
+def test_parser_keeps_part_numbers_numeric():
+    assert cli._parser().parse_args(["profile", "--part", "007"]).part == [7]
+
+
+def test_part_number_is_passed_to_its_published_url(tmp_path, monkeypatch, capsys):
+    local = source(tmp_path, "a.gz")
+    seen = []
+    monkeypatch.setattr(cli, "part_url", lambda part: seen.append(part) or local)
+    assert cli.main(["profile", "--part", "3", "--max-lines", "0"]) == 0
+    capsys.readouterr()
+    assert seen == [3]
 
 
 @pytest.mark.parametrize("argv", [["profile"], ["export", "--out", "d"], ["export", "x"], []])
@@ -156,7 +172,7 @@ def test_assemble_builds_one_dataset_from_the_parts_of_a_run(tmp_path, capsys):
     assert sorted(path.name for path in (dataset / "data").iterdir()) == manifest["shards"]
     assert json.loads((dataset / "profile.json").read_text(encoding="utf-8"))["records"] == 2
     card = (dataset / "README.md").read_text(encoding="utf-8")
-    assert "2 source parts" in card
+    assert "2 source part(s)" in card
     assert "## Parts read" not in card
 
 
@@ -164,7 +180,7 @@ def test_part_numbers_are_read_as_numbers_not_as_text(tmp_path, capsys):
     out = tmp_path / "d"
     assert cli.main(["export", "--part", "007", "--max-lines", "0", "--out", str(out)]) == 0
     capsys.readouterr()
-    assert "1 source parts" in (out / "README.md").read_text(encoding="utf-8")
+    assert "1 source part(s)" in (out / "README.md").read_text(encoding="utf-8")
 
 
 def test_assemble_reads_part_numbers_as_numbers(tmp_path, capsys):
@@ -228,6 +244,34 @@ def test_assemble_shows_the_map_in_the_card_when_asked(tmp_path, capsys):
     assert "![Distribution of schema.org types](types.png)" in (out / "README.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_assemble_passes_numeric_part_urls_to_the_dataset_writer(tmp_path, monkeypatch, capsys):
+    seen = []
+
+    def fake_assemble(parts, sources, directory, map_image, types_image):
+        seen.append((parts, sources, directory, map_image, types_image))
+        return {}
+
+    monkeypatch.setattr(cli, "assemble", fake_assemble)
+    assert (
+        cli.main(
+            [
+                "assemble",
+                "--from",
+                str(tmp_path / "parts"),
+                "--part",
+                "7",
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert seen[0][1] == [
+        "https://data.dws.informatik.uni-mannheim.de/structureddata/2024-12/quads/classspecific/GeoCoordinates/part_7.gz"
+    ]
 
 
 # Golden help text: argparse metavars, program name and layout are part of the
