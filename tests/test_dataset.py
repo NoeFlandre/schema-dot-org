@@ -9,6 +9,7 @@ from wdcgeo.dataset import (
     MAP_NAME,
     SHARD_SIZE,
     TYPES_NAME,
+    CardOptions,
     assemble,
     size_category,
     write_card,
@@ -140,7 +141,7 @@ def test_card_renders_optional_input_stats_as_dashes(tmp_path):
 
 
 def test_card_renders_dashes_for_an_incomplete_stats_section(tmp_path):
-    write_card(tmp_path, 0, [], stats={"text": None})
+    write_card(tmp_path, 0, [], CardOptions(stats={"text": None}))
     card = (tmp_path / CARD_NAME).read_text(encoding="utf-8")
     assert "| Words in name, description, and address | — |" in card
 

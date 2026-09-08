@@ -9,7 +9,7 @@ from pathlib import Path
 
 from wdcgeo import write_text
 from wdcgeo.corpus import stream_lines
-from wdcgeo.dataset import STATS_NAME, TYPES_NAME, DatasetStats, to_json, write_card
+from wdcgeo.dataset import CardOptions, STATS_NAME, TYPES_NAME, DatasetStats, to_json, write_card
 from wdcgeo.extract import GeoText
 
 
@@ -65,9 +65,11 @@ def main() -> None:
         arguments.out,
         stats["records"],
         [str(index) for index in range(source_count)],
-        arguments.map_image,
-        arguments.types_image,
-        stats,
+        CardOptions(
+            map_image=arguments.map_image,
+            types_image=arguments.types_image,
+            stats=stats,
+        ),
     )
     print(json.dumps({"records": stats["records"], "out": str(arguments.out)}, indent=2))
 

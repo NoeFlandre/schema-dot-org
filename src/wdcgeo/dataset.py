@@ -12,19 +12,18 @@ import gzip
 import json
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from itertools import chain, islice
 from pathlib import Path
 from shutil import copyfile
 from typing import TYPE_CHECKING, Any
 
 from wdcgeo import ENCODING, read_text, write_text
+from wdcgeo.extract import GeoText
 from wdcgeo.profile import merge
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
-
-    from wdcgeo.extract import GeoText
 
 SHARD_SIZE = 250_000
 """Records per shard: small enough to stream, few enough to list."""
@@ -135,6 +134,15 @@ def _ranked(counts: Counter[str]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
+@dataclass(frozen=True, slots=True)
+class CardOptions:
+    """Optional images and statistics used when rendering a dataset card."""
+
+    map_image: str | None = None
+    types_image: str | None = None
+    stats: Mapping[str, Any] | None = None
+
+
 def size_category(count: int) -> str:
     """Return the Hugging Face size band ``count`` records fall in."""
     for limit, label in _SIZE_BANDS:
@@ -194,19 +202,18 @@ def write_card(
     directory: Path,
     records: int,
     sources: Sequence[str],
-    map_image: str | None = None,
-    types_image: str | None = None,
-    stats: Mapping[str, Any] | None = None,
+    options: CardOptions | None = None,
 ) -> None:
     """Write the dataset card for a published dataset and its source count."""
+    options = CardOptions() if options is None else options
     template = _template(_CARD_TEMPLATE)
     card = template.format(
         records=f"{records:,}",
         size_category=size_category(records),
         source_count=f"{len(sources):,}",
-        map_section=_map_section(map_image),
-        types_section=_types_section(types_image),
-        **_card_stats(records, stats),
+        map_section=_map_section(options.map_image),
+        types_section=_types_section(options.types_image),
+        **_card_stats(records, options.stats),
     )
     write_text(directory / CARD_NAME, card)
 
@@ -240,7 +247,7 @@ def write_dataset(
         shards.append(name)
     report = stats.to_dict()
     write_text(directory / STATS_NAME, to_json(report) + "\n")
-    write_card(directory, written, sources, stats=report)
+    write_card(directory, written, sources, CardOptions(stats=report))
     return {"records": written, "shards": shards, "card": CARD_NAME, "stats": STATS_NAME}
 
 
@@ -278,7 +285,12 @@ def assemble(
     if input_stats:
         stats["input"] = input_stats
     write_text(directory / STATS_NAME, to_json(stats) + "\n")
-    write_card(directory, stats["records"], sources, map_image, types_image, stats)
+    write_card(
+        directory,
+        stats["records"],
+        sources,
+        CardOptions(map_image=map_image, types_image=types_image, stats=stats),
+    )
     return {
         "parts": len(parts),
         "records": stats["records"],
@@ -289,8 +301,6 @@ def assemble(
 
 
 def _records_from_shards(paths: Sequence[Path]) -> Iterator[GeoText]:
-    from wdcgeo.extract import GeoText
-
     for path in paths:
         with gzip.open(path, "rt", encoding=ENCODING) as handle:
             for line in handle:
