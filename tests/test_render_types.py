@@ -4,11 +4,11 @@ import sys
 from scripts.render_types import main, read_types, render, shown_types
 
 
-def test_shown_types_keeps_top_thirty_and_folds_the_remainder():
-    counts = {f"Type{index:02d}": 100 - index for index in range(32)}
+def test_shown_types_keeps_top_forty_and_folds_the_remainder():
+    counts = {f"Type{index:02d}": 100 - index for index in range(42)}
     assert shown_types(counts) == [
-        *[(f"Type{index:02d}", 100 - index) for index in range(30)],
-        ("Other", 139),
+        *[(f"Type{index:02d}", 100 - index) for index in range(40)],
+        ("Other", 119),
     ]
 
 

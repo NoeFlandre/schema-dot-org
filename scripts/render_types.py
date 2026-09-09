@@ -12,7 +12,7 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
-TOP_N = 30
+TOP_N = 40
 BLUE = "#256abf"
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
