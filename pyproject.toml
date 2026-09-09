@@ -44,7 +44,7 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -62,7 +62,7 @@ ignore = [
 "scripts/*.py" = ["INP001", "T201"]  # standalone development commands
 
 [tool.ty.src]
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 
 [tool.mutmut]
 source_paths = ["src/wdcgeo/"]

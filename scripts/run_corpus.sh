@@ -12,7 +12,7 @@
 # parsing is what gets the cores.
 #
 # Usage: scripts/run_corpus.sh [WORKERS] [CACHE]
-set -uo pipefail
+set -euo pipefail
 
 WORKERS="${1:-4}"
 CACHE="${2:-8}"
@@ -22,7 +22,6 @@ PARTS=237
 CACHE_DIR="$ROOT/data/cache"
 OUT="$ROOT/data/parts"
 LOGS="$ROOT/data/logs"
-WDCGEO="$ROOT/.venv/bin/wdcgeo"
 
 mkdir -p "$CACHE_DIR" "$OUT" "$LOGS"
 
@@ -34,6 +33,11 @@ pending() {
 
 TODO=$(pending)
 echo "== $(echo "$TODO" | wc -w) parts to do, $WORKERS workers, cache of $CACHE"
+
+if [ -z "$TODO" ]; then
+  echo "== nothing to do"
+  exit 0
+fi
 
 download_all() {
   for part in $TODO; do
@@ -58,7 +62,7 @@ process_part() {
     sleep 10
   done
   [ -s "$source" ] || { echo "part $part never arrived" >&2; return 1; }
-  if "$WDCGEO" export "$source" --out "$OUT/part_$part" \
+  if (cd "$ROOT" && uv run --locked wdcgeo export "$source" --out "$OUT/part_$part") \
       > "$LOGS/part_$part.manifest.json" 2> "$LOGS/part_$part.err"; then
     rm -f "$source"
     echo "part $part done"
@@ -68,10 +72,11 @@ process_part() {
   fi
 }
 export -f process_part
-export CACHE_DIR OUT LOGS WDCGEO
+export CACHE_DIR OUT LOGS ROOT
 
 download_all &
 DOWNLOADER=$!
+trap 'kill "$DOWNLOADER" 2>/dev/null || true' EXIT
 echo "$TODO" | tr ' ' '\n' | xargs -P "$WORKERS" -I{} bash -c 'process_part {}'
-wait "$DOWNLOADER" 2>/dev/null
+wait "$DOWNLOADER"
 echo "== done, $(ls -d "$OUT"/part_*/ | wc -l) parts exported"

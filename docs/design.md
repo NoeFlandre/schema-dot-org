@@ -28,17 +28,12 @@ fail on the missing import (RED), then the implementation until it passes
 (GREEN). The commit history follows the cycles.
 
 ```bash
-uv run pytest                                     # 204 tests
-uv run pytest --cov=wdcgeo --cov-report=json      # 100% of lines and branches
-uv run python scripts/crap.py                     # gate: every function below CRAP 6
-uv run ruff format src tests
-uv run ruff check src tests                       # every rule ruff has, minus exceptions
-uv run ty check
-uv run mutmut run && uv run mutmut results        # gate: zero surviving mutants
+bash scripts/quality_gate.sh                     # the complete local/CI gate
 ```
 
 Coverage is gated at 100% of lines *and* branches. It is a floor, not a goal:
-it says every line ran, never that anything was checked.
+it says every line ran, never that anything was checked. The exact test and
+function counts are emitted by the tools rather than copied into this document.
 
 ## CRAP, and why it bites before coverage does
 
@@ -50,8 +45,7 @@ against how much of it the tests run:
 A straight-line function is cheap to change however lightly it is tested; a
 branchy one is only safe to change if the tests go through it. The gate here is
 **every function below 6**, checked by `scripts/crap.py` from radon's
-complexity and the statement coverage of each function's own lines. Current
-state: 86 functions, worst score 5.00.
+complexity and the statement coverage of each function's own lines.
 
 With coverage held at 100% the score collapses to plain complexity, so the gate
 is really a ceiling of five branches per function. Eight functions were over it
@@ -68,8 +62,10 @@ functions have names worth reading, which is the point of the ceiling.
 
 `mutmut` rewrites the source one edit at a time and reruns the suite. A mutant
 that survives is a behaviour no test pins down. The gate here is **zero
-survivors** over `src/wdcgeo/`: of 1,526 mutants, 1,523 are killed by a failing
-assertion and 3 by timeout.
+survivors** over `src/wdcgeo/`. The exact mutation counts are emitted by
+`mutmut`; the gate rejects survivors, untested mutants, unexpected statuses,
+and interruptions. The scanner-loop mutants that cannot terminate are the only
+accepted timeout status.
 
 It earned its keep by changing the design, not just by adding tests:
 

@@ -4,12 +4,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+coverage.json
+dist/
 htmlcov/
 site/
 mutants/
 .mutmut-cache
 mutants.sqlite
 data/
-coverage.json
 .worktrees/
 .DS_Store

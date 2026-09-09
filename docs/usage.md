@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
 That is the whole setup: `wdcgeo` has no runtime dependencies beyond the

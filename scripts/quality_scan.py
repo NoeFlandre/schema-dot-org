@@ -19,12 +19,25 @@ import json
 import re
 import statistics
 import sys
+from collections.abc import Sequence
+from typing import TypedDict, cast
 
 ENTITY = re.compile(r"&(?:amp|lt|gt|quot|#3\d|nbsp);")
 TEXT_FIELDS = ("name", "description", "address")
+SHORT_NAME_LIMIT = 3
 
 
-def scan(paths):
+class Record(TypedDict):
+    """The record fields inspected by this diagnostic script."""
+
+    latitude: float
+    longitude: float
+    name: str | None
+    description: str | None
+    address: str | None
+
+
+def scan(paths: Sequence[str]) -> dict[str, object]:
     """Return defect counts over every record in ``paths``."""
     records = 0
     identical_coordinates = 0
@@ -34,7 +47,7 @@ def scan(paths):
     for path in paths:
         with gzip.open(path, "rt", encoding="utf-8") as handle:
             for line in handle:
-                record = json.loads(line)
+                record = cast("Record", json.loads(line))
                 records += 1
                 identical_coordinates += record["latitude"] == record["longitude"]
                 for field in TEXT_FIELDS:
@@ -42,7 +55,7 @@ def scan(paths):
                     if value and ENTITY.search(value):
                         entities[field] += 1
                 name = record["name"]
-                short_names += bool(name) and len(name) < 3
+                short_names += int(bool(name) and len(name) < SHORT_NAME_LIMIT)
                 if record["description"]:
                     description_lengths.append(len(record["description"]))
     description_lengths.sort()
@@ -61,7 +74,7 @@ def scan(paths):
     }
 
 
-def main():
+def main() -> None:
     """Print the scan of the shards named on the command line."""
     print(json.dumps(scan(sys.argv[1:]), indent=2))
 

@@ -13,11 +13,13 @@ import csv
 import json
 import sys
 from collections import Counter
+from collections.abc import Iterable, Mapping
+from pathlib import Path
 
 FIELDS = ("Domain", "#Quads of Subset", "#Entities of class", "Properties and Density")
 
 
-def summarise(rows):
+def summarise(rows: Iterable[Mapping[str, str]]) -> dict[str, object]:
     """Return corpus-wide figures over the rows of the domain stats file."""
     domains = quads = entities = 0
     properties = Counter()
@@ -46,15 +48,16 @@ def summarise(rows):
         },
         "domains_publishing_property": dict(properties.most_common(20)),
         "mean_density_where_published": {
-            name: round(density[name] / properties[name], 3) for name, _ in properties.most_common(20)
+            name: round(density[name] / properties[name], 3)
+            for name, _ in properties.most_common(20)
         },
         "top_property_combinations": dict(combinations.most_common(12)),
     }
 
 
-def main():
+def main() -> None:
     """Print the summary of the file named on the command line."""
-    with open(sys.argv[1], encoding="utf-8", newline="") as handle:
+    with Path(sys.argv[1]).open(encoding="utf-8", newline="") as handle:
         summary = summarise(csv.DictReader(handle, delimiter="\t"))
     print(json.dumps(summary, indent=2))
 

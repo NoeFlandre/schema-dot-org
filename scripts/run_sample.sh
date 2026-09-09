@@ -10,7 +10,7 @@
 # each copy is deleted as soon as its part is done.
 #
 # Usage: scripts/run_sample.sh [STRIDE] [WORKERS]
-set -uo pipefail
+set -euo pipefail
 
 STRIDE="${1:-7}"
 WORKERS="${2:-4}"
@@ -19,7 +19,6 @@ BASE="https://data.dws.informatik.uni-mannheim.de/structureddata/2024-12/quads/c
 CACHE="$ROOT/data/cache"
 OUT="$ROOT/data/parts"
 LOGS="$ROOT/data/logs"
-WDCGEO="$ROOT/.venv/bin/wdcgeo"
 
 mkdir -p "$CACHE" "$OUT" "$LOGS"
 PARTS=$(seq 0 "$STRIDE" 236)
@@ -37,7 +36,7 @@ process_part() {
   part="$1"
   source="$CACHE/part_$part.gz"
   [ -s "$source" ] || { echo "part $part missing" >&2; return 1; }
-  if "$WDCGEO" export "$source" --out "$OUT/part_$part" \
+  if (cd "$ROOT" && uv run --locked wdcgeo export "$source" --out "$OUT/part_$part") \
       > "$LOGS/part_$part.manifest.json" 2> "$LOGS/part_$part.err"; then
     rm -f "$source"
     echo "part $part done"
@@ -47,7 +46,7 @@ process_part() {
   fi
 }
 export -f process_part
-export CACHE OUT LOGS WDCGEO
+export CACHE OUT LOGS ROOT
 
 echo "== processing with $WORKERS workers"
 echo "$PARTS" | tr ' ' '\n' | xargs -P "$WORKERS" -I{} bash -c 'process_part {}'

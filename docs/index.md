@@ -42,7 +42,7 @@ published and how.
 ## The tools
 
 ```bash
-uv sync
+uv sync --locked
 uv run wdcgeo profile --part 0 --max-lines 2000000   # 15 seconds, no disk used
 ```
 

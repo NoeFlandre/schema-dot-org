@@ -17,16 +17,18 @@ be claiming a precision the corpus does not have.
 import argparse
 import gzip
 import json
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 import numpy as np
+from numpy.typing import NDArray
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap, LogNorm  # noqa: E402
+mpl.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, LogNorm
 
-from wdcgeo.density import CELLS_PER_DEGREE, density, grid_shape  # noqa: E402
+from wdcgeo.density import CELLS_PER_DEGREE, density, grid_shape
 
 # The blue sequential ramp, steps 100 to 700: one hue, light to dark.
 RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
@@ -36,7 +38,7 @@ MUTED = "#52514e"
 GRATICULE = "#e6e5e1"
 
 
-def read_points(paths):
+def read_points(paths: Sequence[Path]) -> Iterator[tuple[float, float]]:
     """Yield the coordinates of every record in the given shards."""
     for path in paths:
         with gzip.open(path, "rt", encoding="utf-8") as handle:
@@ -45,7 +47,7 @@ def read_points(paths):
                 yield (record["latitude"], record["longitude"])
 
 
-def build_grid(paths, cells_per_degree):
+def build_grid(paths: Sequence[Path], cells_per_degree: int) -> tuple[NDArray[np.int64], int]:
     """Return a counts array and the number of records that went into it."""
     counts = density(read_points(paths), cells_per_degree)
     rows, columns = grid_shape(cells_per_degree)
@@ -55,7 +57,7 @@ def build_grid(paths, cells_per_degree):
     return grid, int(grid.sum())
 
 
-def render(grid, records, out, cells_per_degree):
+def render(grid: NDArray[np.int64], records: int, out: Path, cells_per_degree: int) -> None:
     """Draw the grid to ``out`` as a PNG."""
     figure, axes = plt.subplots(figsize=(16, 8.6), dpi=110)
     figure.patch.set_facecolor(SURFACE)
@@ -83,8 +85,12 @@ def render(grid, records, out, cells_per_degree):
     axes.set_ylim(-90, 90)
     axes.set_xticks(range(-180, 181, 60))
     axes.set_yticks(range(-90, 91, 30))
-    axes.set_xticklabels([f"{abs(v)}°{'' if v == 0 else 'E' if v > 0 else 'W'}" for v in range(-180, 181, 60)])
-    axes.set_yticklabels([f"{abs(v)}°{'' if v == 0 else 'N' if v > 0 else 'S'}" for v in range(-90, 91, 30)])
+    axes.set_xticklabels(
+        [f"{abs(v)}°{'' if v == 0 else 'E' if v > 0 else 'W'}" for v in range(-180, 181, 60)]
+    )
+    axes.set_yticklabels(
+        [f"{abs(v)}°{'' if v == 0 else 'N' if v > 0 else 'S'}" for v in range(-90, 91, 30)]
+    )
     axes.tick_params(colors=MUTED, labelsize=9, length=0)
     for spine in axes.spines.values():
         spine.set_visible(False)
@@ -120,7 +126,7 @@ def render(grid, records, out, cells_per_degree):
     plt.close(figure)
 
 
-def main():
+def main() -> None:
     """Render the shards named on the command line."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("shards", nargs="+", type=Path)

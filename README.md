@@ -14,7 +14,7 @@ read.
 ![Density of every record over the world](docs/map.png)
 
 ```bash
-uv sync
+uv sync --locked
 uv run wdcgeo profile --part 0 --max-lines 2000000   # 15 seconds, no disk used
 ```
 
@@ -49,13 +49,16 @@ corpus got wrong.
 ## Development
 
 ```bash
-uv run pytest --cov=wdcgeo --cov-report=json  # 100% of lines and branches, enforced
-uv run python scripts/crap.py                 # gate: every function below CRAP 6
-uv run ruff check src tests                   # every ruff rule, minus exceptions
-uv run ty check
-uv run mutmut run                             # gate: zero surviving mutants
-uv run mkdocs serve
+uv sync --locked
+bash scripts/quality_gate.sh                 # the complete local/CI gate
+uv run --locked mkdocs serve
 ```
+
+The quality gate discovers the configured Python scope automatically and runs
+formatting, linting, strict typing, 100% line and branch coverage, CRAP below
+6, mutation testing with no surviving mutants, a wheel/sdist build, and a
+strict documentation build. Mutation timeouts are retained only for the
+scanner-loop mutants documented in [Design and quality](docs/design.md).
 
 Written test-first throughout, with mutation testing as the real gate on the
 tests and CRAP as the gate on how branchy any one function may get. [Design and quality](docs/design.md) explains the module boundaries and
