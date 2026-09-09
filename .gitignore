@@ -12,3 +12,4 @@ mutants.sqlite
 data/
 coverage.json
 .worktrees/
+.DS_Store
